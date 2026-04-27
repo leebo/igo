@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"strconv"
+
 	"github.com/igo/igo/ai/metadata"
 )
 
@@ -122,5 +124,5 @@ func (g *Generator) setOperation(pathItem *PathItem, method string, operation *O
 
 // itoa 将整数转换为字符串
 func itoa(i int) string {
-	return string(rune('0'+i/100%10)) + string(rune('0'+i/10%10)) + string(rune('0'+i%10))
+	return strconv.Itoa(i)
 }

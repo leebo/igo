@@ -28,14 +28,17 @@ func Logger() core.MiddlewareFunc {
 }
 
 func getStatus(c *core.Context) int {
-	// 从 Writer 获取状态码
-	// 注意：这里简化处理，实际应该包装 ResponseWriter
-	return http.StatusOK
+	return c.StatusCode()
 }
 
 // Recovery 恢复中间件
 func Recovery() core.MiddlewareFunc {
 	return func(c *core.Context) {
+		defer func() {
+			if err := recover(); err != nil {
+				c.InternalError("Internal server error")
+			}
+		}()
 		c.Next()
 	}
 }
@@ -58,7 +61,8 @@ func CORS() core.MiddlewareFunc {
 
 // RateLimit 简单限流中间件（基于 IP）
 func RateLimit(requests int, window time.Duration) core.MiddlewareFunc {
-	// 简化实现，实际生产应该用 Redis 或其他存储
+	// TODO: 实现基于 Redis 的分布式限流
+	// 目前仅记录限流配置，实际限流需要配合 plugin/cache/redis 使用
 	return func(c *core.Context) {
 		c.Next()
 	}
