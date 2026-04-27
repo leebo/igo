@@ -14,12 +14,21 @@ type ErrorDetail struct {
 	Field       string        `json:"field,omitempty"`
 	Suggestions []string      `json:"suggestions,omitempty"`
 	Context     *ErrorContext `json:"context,omitempty"`
-	Details     []ErrorDetail `json:"details,omitempty"`   // 多字段错误时使用
+	Details     []ErrorDetail `json:"details,omitempty"`    // 多字段错误时使用
 	Metadata    map[string]any `json:"metadata,omitempty"`
+	CallChain   []CallFrame   `json:"callChain,omitempty"` // 调用链
+	RootCause   *ErrorDetail  `json:"rootCause,omitempty"` // 根本原因
 }
 
 // NewErrorResponse 从 StructuredError 创建错误响应
 func NewErrorResponse(err *StructuredError) ErrorResponse {
+	if err == nil {
+		return ErrorResponse{Error: ErrorDetail{
+			Code:    CodeInternalError,
+			Message: "unknown error",
+		}}
+	}
+
 	detail := ErrorDetail{
 		Code:    err.Code,
 		Message: err.Message,
@@ -35,6 +44,26 @@ func NewErrorResponse(err *StructuredError) ErrorResponse {
 			FilePath:    err.FilePath,
 			Line:       err.Line,
 			Suggestions: err.Suggestions,
+		}
+	}
+
+	if err.Metadata != nil {
+		detail.Metadata = err.Metadata
+	}
+
+	if len(err.CallChain) > 0 {
+		detail.CallChain = err.CallChain
+	}
+
+	// 转换根因
+	if err.RootCause != nil {
+		detail.RootCause = &ErrorDetail{
+			Code:    err.RootCause.Code,
+			Message: err.RootCause.Message,
+			Field:   err.RootCause.Field,
+		}
+		if len(err.RootCause.CallChain) > 0 {
+			detail.RootCause.CallChain = err.RootCause.CallChain
 		}
 	}
 

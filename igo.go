@@ -14,9 +14,20 @@
 //	    c.Success(igo.H{"status": "ok"})
 //	})
 //	app.Run(":8080")
+//
+// 使用 Simple() 快速启动（带默认中间件）：
+//
+//	app := igo.Simple()
+//	app.Get("/health", func(c *igo.Context) {
+//	    c.Success(igo.H{"status": "ok"})
+//	})
+//	app.Run(":8080")
 package igo
 
-import "github.com/igo/igo/core"
+import (
+	"github.com/igo/igo/core"
+	"github.com/igo/igo/middleware"
+)
 
 // App 是 igo 应用的实例
 type App = core.App
@@ -39,4 +50,15 @@ type ResourceHandler = core.ResourceHandler
 // New 创建一个新的 igo 应用
 func New() *App {
 	return core.New()
+}
+
+// Simple 创建一个带有默认中间件的 igo 应用
+// 默认中间件：Recovery、CORS、Logger
+// 适用于快速开发和小项目
+func Simple() *App {
+	app := core.New()
+	app.Use(middleware.Recovery())
+	app.Use(middleware.CORS())
+	app.Use(middleware.Logger())
+	return app
 }

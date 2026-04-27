@@ -191,3 +191,73 @@ func LoadFromFile(path, name, typ string) (*AppConfig, error) {
 
 	return &cfg, nil
 }
+
+// Validate 验证配置有效性，返回第一个发现的错误
+// AI 使用此方法可以在启动前发现配置问题
+func (c *AppConfig) Validate() error {
+	var errors []string
+
+	// 验证 Server
+	if c.Server.Port == "" {
+		errors = append(errors, "server.port is required (e.g., ':8080' or '0.0.0.0:8080')")
+	}
+
+	// 验证 Database
+	if c.Database.Dialect == "" {
+		errors = append(errors, "database.dialect is required (e.g., 'mysql', 'postgres', 'sqlite')")
+	}
+	if c.Database.DSN == "" {
+		errors = append(errors, "database.dsn is required (e.g., './app.db' or 'user:pass@tcp(localhost:3306)/db')")
+	}
+
+	// 验证 JWT（如果是生产环境）
+	if c.JWT.SecretKey == "" {
+		errors = append(errors, "jwt.secret_key is required for authentication")
+	}
+	if c.JWT.SecretKey == "secret" || c.JWT.SecretKey == "your-secret-key" {
+		errors = append(errors, "jwt.secret_key should not be a placeholder value in production")
+	}
+
+	// 验证 Log
+	if c.Log.Level == "" {
+		c.Log.Level = "info" // 默认值
+	}
+	if c.Log.Format == "" {
+		c.Log.Format = "console" // 默认值
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("config validation failed: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+// ValidateForProduction 生产环境验证，更严格的检查
+func (c *AppConfig) ValidateForProduction() error {
+	var errors []string
+
+	// 基本验证
+	if err := c.Validate(); err != nil {
+		return err
+	}
+
+	// 生产环境额外检查
+	if c.JWT.SecretKey == "" || len(c.JWT.SecretKey) < 32 {
+		errors = append(errors, "jwt.secret_key must be at least 32 characters in production")
+	}
+
+	if c.Database.Dialect == "sqlite" {
+		errors = append(errors, "sqlite is not recommended for production")
+	}
+
+	if c.Log.Level == "debug" {
+		errors = append(errors, "log.level 'debug' should not be used in production")
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("production config validation failed: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
+}

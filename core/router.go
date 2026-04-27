@@ -3,6 +3,8 @@ package core
 import (
 	"net/http"
 	"path"
+	"reflect"
+	"runtime"
 	"strings"
 )
 
@@ -21,6 +23,15 @@ type Route struct {
 	Handler     HandlerFunc
 	Middlewares []MiddlewareFunc
 	Name        string
+	// HandlerInfo 处理函数信息，用于元数据推断
+	HandlerInfo *HandlerInfo
+}
+
+// HandlerInfo 处理函数信息
+type HandlerInfo struct {
+	Name     string
+	FilePath string
+	Line     int
 }
 
 // NewRouter 创建新的路由实例
@@ -79,13 +90,32 @@ func (r *Router) addRoute(method, p string, handler HandlerFunc, middlewares ...
 		p = "/" + p
 	}
 
+	// 获取 handler 的位置信息
+	handlerName := runtime.FuncForPC(reflect.ValueOf(handler).Pointer()).Name()
+	filePath, line := getFileLine(handler)
+
 	route := &Route{
 		Method:      method,
 		Path:        p,
 		Handler:     handler,
 		Middlewares: middlewares,
+		Name:        handlerName,
+		HandlerInfo: &HandlerInfo{
+			Name:     handlerName,
+			FilePath: filePath,
+			Line:     line,
+		},
 	}
 	r.routes = append(r.routes, route)
+}
+
+// getFileLine 获取函数定义的文件和行号
+func getFileLine(handler HandlerFunc) (filePath string, line int) {
+	pc := reflect.ValueOf(handler).Pointer()
+	if f := runtime.FuncForPC(pc); f != nil {
+		filePath, line = f.FileLine(pc)
+	}
+	return
 }
 
 // Resources 注册 RESTful 资源路由
@@ -137,6 +167,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// 尝试匹配通配符路由（*subpath）
+	for _, route := range r.routes {
+		if route.Method == req.Method && matchWildcardPath(route.Path, req.URL.Path) {
+			ctx.Params = extractWildcardParams(route.Path, req.URL.Path)
+			r.handleRoute(ctx, route)
+			return
+		}
+	}
+
 	// 404 - 只执行全局中间件
 	if r.notFound != nil {
 		ctx.handlers = append(ctx.handlers, r.notFound)
@@ -180,4 +219,44 @@ func (r *Router) runWithRecovery(ctx *Context) {
 	}()
 
 	ctx.Next()
+}
+
+// matchWildcardPath 检查路径是否匹配通配符模式
+// 支持 /path/*subpath 格式
+func matchWildcardPath(pattern, path string) bool {
+	if !strings.Contains(pattern, "*") {
+		return false
+	}
+
+	// 提取通配符前的路径前缀
+	prefix := strings.Split(pattern, "*")[0]
+
+	// 检查路径是否以前缀开头
+	return strings.HasPrefix(path, prefix)
+}
+
+// extractWildcardParams 提取通配符参数
+func extractWildcardParams(pattern, path string) map[string]string {
+	params := make(map[string]string)
+
+	if !strings.Contains(pattern, "*") {
+		return params
+	}
+
+	// 提取通配符前的路径前缀
+	prefix := strings.Split(pattern, "*")[0]
+	starIdx := strings.Index(pattern, "*")
+	wildcardName := strings.TrimPrefix(pattern[starIdx+1:], "*")
+
+	// 提取通配符匹配的部分
+	if strings.HasPrefix(path, prefix) {
+		wildcardValue := strings.TrimPrefix(path, prefix)
+		// 去掉开头的 /
+		if strings.HasPrefix(wildcardValue, "/") {
+			wildcardValue = strings.TrimPrefix(wildcardValue, "/")
+		}
+		params[wildcardName] = wildcardValue
+	}
+
+	return params
 }
