@@ -1,0 +1,22 @@
+server:
+  port: ":8080"
+  mode: "debug"
+
+database:
+  dialect: "sqlite"
+  dsn: "./test.db"
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+jwt:
+  secret_key: "your-secret-key-change-in-production"
+  expiration: "24h"
+  refresh_expiry: "168h"
+
+log:
+  level: "info"
+  format: "console"
+  output_path: "stdout"
