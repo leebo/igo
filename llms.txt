@@ -1,0 +1,37 @@
+# igo
+
+igo is an AI-friendly Go web framework.
+
+Use these files first:
+
+- `AGENTS.md`: short agent guide
+- `CLAUDE.md`: framework conventions and command list
+- `docs/ai.md`: AI metadata contract
+
+Core commands:
+
+- `go test ./...`
+- `go run ./cmd/igo doctor .`
+- `go run ./cmd/igo ai context . --format json`
+- `go run ./cmd/igo ai routes .`
+- `go run ./cmd/igo ai schemas .`
+- `go run ./cmd/igo ai errors`
+- `go run ./cmd/igo ai openapi .`
+- `go run ./cmd/igo ai prompt . METHOD PATH`
+
+Runtime metadata endpoints are enabled by `app.RegisterAIRoutes()`:
+
+- `/_ai/routes`
+- `/_ai/schemas`
+- `/_ai/errors`
+- `/_ai/info`
+- `/_ai/openapi`
+- `/_ai/conventions`
+- `/_ai/middlewares`
+
+Preferred handler helpers:
+
+- `igo.BindAndValidate[T](c)` for JSON body
+- `igo.BindQueryAndValidate[T](c)` for query parameters
+- `igo.BindPathAndValidate[T](c)` for path parameters
+- `c.InternalErrorWrap`, `c.NotFoundWrap`, `c.BadRequestWrap`, `c.ValidationErrorWrap` for error branches

@@ -68,7 +68,7 @@ func main() {
 		v1.Post("/users", func(c *core.Context) {
 			var user User
 			if err := c.BindJSON(&user); err != nil {
-				c.BadRequest("Invalid request body")
+				c.BadRequestWrap(err, "Invalid request body")
 				return
 			}
 			user.ID = 1
@@ -80,7 +80,7 @@ func main() {
 			id := c.Param("id")
 			var user User
 			if err := c.BindJSON(&user); err != nil {
-				c.BadRequest("Invalid request body")
+				c.BadRequestWrap(err, "Invalid request body")
 				return
 			}
 			user.ID = 1

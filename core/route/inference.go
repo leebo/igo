@@ -6,12 +6,12 @@ import (
 
 // InferenceOptions 推断选项
 type InferenceOptions struct {
-	EnableSummary      bool // 从函数名推断 Summary
-	EnableTags         bool // 从路径前缀推断 Tags
-	EnableParams       bool // 从 :param 模式提取参数
-	EnableHandler      bool // 从函数位置获取 HandlerName, FilePath, LineNumber
-	EnableRequestBody  bool // 分析 BindJSON 调用 (需要运行时)
-	EnableResponse     bool // 分析 Success/Created 调用 (需要运行时)
+	EnableSummary     bool // 从函数名推断 Summary
+	EnableTags        bool // 从路径前缀推断 Tags
+	EnableParams      bool // 从 :param 模式提取参数
+	EnableHandler     bool // 从函数位置获取 HandlerName, FilePath, LineNumber
+	EnableRequestBody bool // 分析 BindJSON 调用 (需要运行时)
+	EnableResponse    bool // 分析 Success/Created 调用 (需要运行时)
 }
 
 // DefaultInferenceOptions 默认推断选项
@@ -87,8 +87,8 @@ func (ie *InferenceEngine) inferParamsFromPath(path string) []ParamDefinition {
 	parts := strings.Split(path, "/")
 
 	for _, part := range parts {
-		if strings.HasPrefix(part, ":") {
-			name := strings.TrimPrefix(part, ":")
+		if strings.HasPrefix(part, ":") || strings.HasPrefix(part, "*") {
+			name := strings.TrimLeft(part, ":*")
 			params = append(params, ParamDefinition{
 				Name:     name,
 				In:       "path",
@@ -156,7 +156,28 @@ func (ie *InferenceEngine) inferSummaryFromName(handlerName, method, path string
 	verb := getVerbForMethod(method, words[0])
 
 	if len(words) == 1 {
-		return verb + " " + singularize(words[0])
+		resource := resourceNameFromPath(path)
+		if resource == "" {
+			resource = singularize(words[0])
+		}
+		switch method {
+		case "GET":
+			if strings.Contains(path, ":") {
+				return "Get " + singularize(resource) + " by ID"
+			}
+			if strings.EqualFold(words[0], "list") || strings.HasSuffix(resource, "s") {
+				return "List " + resource
+			}
+			return "Get " + resource
+		case "POST":
+			return "Create " + singularize(resource)
+		case "PUT", "PATCH":
+			return "Update " + singularize(resource)
+		case "DELETE":
+			return "Delete " + singularize(resource)
+		default:
+			return verb + " " + resource
+		}
 	}
 
 	// 根据路径参数决定后缀
@@ -168,6 +189,18 @@ func (ie *InferenceEngine) inferSummaryFromName(handlerName, method, path string
 	return verb + " " + strings.Join(words[1:], " ")
 }
 
+func resourceNameFromPath(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	for i := len(parts) - 1; i >= 0; i-- {
+		part := parts[i]
+		if part == "" || strings.HasPrefix(part, ":") || strings.HasPrefix(part, "*") {
+			continue
+		}
+		return strings.ReplaceAll(part, "-", " ")
+	}
+	return ""
+}
+
 // splitCamelCase 拆分驼峰命名
 func splitCamelCase(s string) []string {
 	if s == "" {
@@ -176,20 +209,15 @@ func splitCamelCase(s string) []string {
 	var words []string
 	var current strings.Builder
 
-	for i, r := range s {
+	for _, r := range s {
 		if r >= 'A' && r <= 'Z' {
 			if current.Len() > 0 {
 				words = append(words, current.String())
 				current.Reset()
 			}
-			// 小写写入
 			current.WriteRune(r + 32)
 		} else {
 			current.WriteRune(r)
-		}
-		// 第一个字符大写时，不追加空的第一个词
-		if i == 0 && current.Len() == 1 && r >= 'A' && r <= 'Z' {
-			current.Reset()
 		}
 	}
 

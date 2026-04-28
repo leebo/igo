@@ -1,0 +1,41 @@
+{
+  "name": "igo",
+  "title": "igo AI-Friendly Go Web Framework",
+  "description": "A small Go web framework with AI-oriented route, schema, error, OpenAPI, and runtime metadata.",
+  "version": "0.1.0",
+  "language": "go",
+  "docs": [
+    {
+      "title": "AI integration",
+      "path": "docs/ai.md"
+    },
+    {
+      "title": "Agent guide",
+      "path": "AGENTS.md"
+    },
+    {
+      "title": "Framework guide",
+      "path": "CLAUDE.md"
+    }
+  ],
+  "commands": [
+    "go test ./...",
+    "go run ./cmd/igo doctor .",
+    "go run ./cmd/igo ai context . --format json",
+    "go run ./cmd/igo ai routes .",
+    "go run ./cmd/igo ai schemas .",
+    "go run ./cmd/igo ai errors",
+    "go run ./cmd/igo ai openapi .",
+    "go run ./cmd/igo ai workflow",
+    "go run ./cmd/igo ai examples"
+  ],
+  "runtimeEndpoints": [
+    "/_ai/routes",
+    "/_ai/schemas",
+    "/_ai/errors",
+    "/_ai/info",
+    "/_ai/openapi",
+    "/_ai/conventions",
+    "/_ai/middlewares"
+  ]
+}

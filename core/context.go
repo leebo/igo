@@ -2,57 +2,96 @@ package core
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"reflect"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/igo/igo/core/errors"
+	"github.com/igo/igo/core/validator"
+	"github.com/igo/igo/types"
 )
+
+// registerSchemaOnce 把类型注册到当前 App 的 schema 注册表（已注册则跳过反射）
+// 由 BindAndValidate / BindQueryAndValidate / BindPathAndValidate 自动调用，
+// 让 /_ai/schemas 端点能列出所有被运行时绑定的类型
+func registerSchemaOnce(registry *types.TypeRegistry, v interface{}) {
+	if registry == nil {
+		registry = types.GlobalTypeRegistry
+	}
+	t := reflect.TypeOf(v)
+	if t == nil {
+		return
+	}
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return
+	}
+	name := t.Name()
+	if name == "" {
+		return // 匿名结构体跳过
+	}
+	if registry.GetType(name) != nil {
+		return
+	}
+	schema := types.ExtractSchemaFromType(t)
+	registry.RegisterType(&schema)
+}
 
 // LoggerInterface 日志接口
 type LoggerInterface interface {
 	Printf(format string, v ...interface{})
 }
 
-// globalLogger 全局日志客户端（可选，用于自动记录错误日志）
-var globalLogger LoggerInterface
+var (
+	globalLoggerMu sync.RWMutex
+	globalLogger   LoggerInterface
+)
 
-// SetLogger 设置全局日志客户端
-// 如果设置了，InternalErrorWrap 等方法会自动记录错误到日志
+// SetLogger 设置全局日志客户端，线程安全
 func SetLogger(l LoggerInterface) {
+	globalLoggerMu.Lock()
+	defer globalLoggerMu.Unlock()
 	globalLogger = l
+}
+
+func getLogger() LoggerInterface {
+	globalLoggerMu.RLock()
+	defer globalLoggerMu.RUnlock()
+	return globalLogger
 }
 
 // Context 是请求上下文
 type Context struct {
-	Request         *http.Request
-	Writer          http.ResponseWriter
-	Params          map[string]string
-	QueryArgs       urlValues
+	Request        *http.Request
+	Writer         http.ResponseWriter
+	Params         map[string]string
+	QueryArgs      urlValues
 	handlers       []HandlerFunc
 	handlerIndex   int
 	statusCode     int
-	// GinContextData 用于存储 gin 风格的数据（c.Set/c.Get）
-	// 由 adapter 包使用
 	GinContextData map[string]interface{}
-	// errorChain 错误链，用于追踪错误传播
-	errorChain []*errors.StructuredError
+	errorChain     []*errors.StructuredError
+	typeRegistry   *types.TypeRegistry
 }
 
 type urlValues map[string][]string
 
-func newContext(w http.ResponseWriter, req *http.Request) *Context {
+func newContext(w http.ResponseWriter, req *http.Request, typeRegistry *types.TypeRegistry) *Context {
 	return &Context{
-		Request:          req,
-		Writer:           w,
-		Params:           make(map[string]string),
-		QueryArgs:        urlValues(req.URL.Query()),
-		handlers:         make([]HandlerFunc, 0),
-		handlerIndex:     -1, // 初始值为 -1，Next() 会先递增再调用
-		GinContextData:   make(map[string]interface{}),
+		Request:        req,
+		Writer:         w,
+		Params:         make(map[string]string),
+		QueryArgs:      urlValues(req.URL.Query()),
+		handlers:       make([]HandlerFunc, 0),
+		handlerIndex:   -1,
+		GinContextData: make(map[string]interface{}),
+		typeRegistry:   typeRegistry,
 	}
 }
 
@@ -89,8 +128,7 @@ func (c *Context) ParamInt(key string) int {
 	return int(c.ParamInt64(key))
 }
 
-// ParamInt64OrFail 获取路径参数（int64），无效则返回 400 错误
-// 返回 (value, true) 表示成功，返回 (0, false) 表示失败并已发送响应
+// ParamInt64OrFail 获取路径参数（int64），无效则返回 400 并停止
 func (c *Context) ParamInt64OrFail(key string) (int64, bool) {
 	val := c.Params[key]
 	if val == "" {
@@ -99,13 +137,13 @@ func (c *Context) ParamInt64OrFail(key string) (int64, bool) {
 	}
 	i, err := strconv.ParseInt(val, 10, 64)
 	if err != nil {
-		c.BadRequest("invalid parameter: " + key)
+		c.BadRequestWrap(err, "invalid parameter: "+key)
 		return 0, false
 	}
 	return i, true
 }
 
-// ParamIntOrFail 获取路径参数（int），无效则返回 400 错误
+// ParamIntOrFail 获取路径参数（int），无效则返回 400 并停止
 func (c *Context) ParamIntOrFail(key string) (int, bool) {
 	v, ok := c.ParamInt64OrFail(key)
 	return int(v), ok
@@ -126,7 +164,7 @@ func (c *Context) Query(key string) string {
 	return values[0]
 }
 
-// QueryInt 获取查询参数（整数）
+// QueryInt 获取查询参数（整数），不存在或解析失败返回 defaultVal
 func (c *Context) QueryInt(key string, defaultVal int) int {
 	val := c.Query(key)
 	if val == "" {
@@ -139,7 +177,7 @@ func (c *Context) QueryInt(key string, defaultVal int) int {
 	return i
 }
 
-// QueryInt64 获取查询参数（int64）
+// QueryInt64 获取查询参数（int64），不存在或解析失败返回 defaultVal
 func (c *Context) QueryInt64(key string, defaultVal int64) int64 {
 	val := c.Query(key)
 	if val == "" {
@@ -149,7 +187,7 @@ func (c *Context) QueryInt64(key string, defaultVal int64) int64 {
 	return i
 }
 
-// QueryInt64OrFail 获取查询参数（int64），无效则返回 400 错误
+// QueryInt64OrFail 获取查询参数（int64），无效则返回 400 并停止
 func (c *Context) QueryInt64OrFail(key string) (int64, bool) {
 	val := c.Query(key)
 	if val == "" {
@@ -158,19 +196,19 @@ func (c *Context) QueryInt64OrFail(key string) (int64, bool) {
 	}
 	i, err := strconv.ParseInt(val, 10, 64)
 	if err != nil {
-		c.BadRequest("invalid query parameter: " + key)
+		c.BadRequestWrap(err, "invalid query parameter: "+key)
 		return 0, false
 	}
 	return i, true
 }
 
-// QueryIntOrFail 获取查询参数（int），无效则返回 400 错误
+// QueryIntOrFail 获取查询参数（int），无效则返回 400 并停止
 func (c *Context) QueryIntOrFail(key string) (int, bool) {
 	v, ok := c.QueryInt64OrFail(key)
 	return int(v), ok
 }
 
-// QueryDefault 获取查询参数，带默认值
+// QueryDefault 获取查询参数，不存在时返回 defaultVal
 func (c *Context) QueryDefault(key, defaultVal string) string {
 	val := c.Query(key)
 	if val == "" {
@@ -193,8 +231,7 @@ func (c *Context) BindJSON(v interface{}) error {
 	if c.Request.Body == nil {
 		return ErrBodyRequired
 	}
-	decoder := json.NewDecoder(c.Request.Body)
-	return decoder.Decode(v)
+	return json.NewDecoder(c.Request.Body).Decode(v)
 }
 
 // BindQuery 将 query 参数绑定到结构体
@@ -211,6 +248,67 @@ func (c *Context) BindQuery(v interface{}) error {
 // BindPath 将 path 参数绑定到结构体
 func (c *Context) BindPath(v interface{}) error {
 	return bindValuesToStruct(c.Params, v)
+}
+
+// BindAndValidate 将 JSON body 绑定并验证，失败时自动返回错误响应
+// 返回 (nil, false) 表示已发送错误响应，调用方应立即 return
+//
+// 用法：
+//
+//	req, ok := igo.BindAndValidate[CreateUserRequest](c)
+//	if !ok { return }
+func BindAndValidate[T any](c *Context) (*T, bool) {
+	var req T
+	registerSchemaOnce(c.typeRegistry, &req)
+	if err := c.BindJSON(&req); err != nil {
+		c.BadRequestWrap(err, "invalid request body")
+		return nil, false
+	}
+	if err := validator.Validate(&req); err != nil {
+		c.ValidationError(err)
+		return nil, false
+	}
+	return &req, true
+}
+
+// BindQueryAndValidate 把 URL 查询参数绑定到结构体并校验，失败时自动响应
+//
+// 用法：
+//
+//	q, ok := igo.BindQueryAndValidate[ListQuery](c)
+//	if !ok { return }
+func BindQueryAndValidate[T any](c *Context) (*T, bool) {
+	var req T
+	registerSchemaOnce(c.typeRegistry, &req)
+	if err := c.BindQuery(&req); err != nil {
+		c.BadRequestWrap(err, "invalid query parameters")
+		return nil, false
+	}
+	if err := validator.Validate(&req); err != nil {
+		c.ValidationError(err)
+		return nil, false
+	}
+	return &req, true
+}
+
+// BindPathAndValidate 把 :path 参数绑定到结构体并校验，失败时自动响应
+//
+// 用法：
+//
+//	p, ok := igo.BindPathAndValidate[ResourceParams](c)
+//	if !ok { return }
+func BindPathAndValidate[T any](c *Context) (*T, bool) {
+	var req T
+	registerSchemaOnce(c.typeRegistry, &req)
+	if err := c.BindPath(&req); err != nil {
+		c.BadRequestWrap(err, "invalid path parameters")
+		return nil, false
+	}
+	if err := validator.Validate(&req); err != nil {
+		c.ValidationError(err)
+		return nil, false
+	}
+	return &req, true
 }
 
 // JSON 返回 JSON 响应
@@ -233,6 +331,7 @@ func (c *Context) Created(v interface{}) {
 
 // NoContent 返回无内容响应（204）
 func (c *Context) NoContent() {
+	c.statusCode = http.StatusNoContent
 	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
@@ -271,97 +370,107 @@ func (c *Context) InternalError(message string) {
 	c.Error(http.StatusInternalServerError, "INTERNAL_ERROR", message)
 }
 
-// InternalErrorWrap 返回 500 错误，带调用链包装，自动记录日志
+// ValidationError 返回验证错误（422），包含字段信息和修复建议
+// 当 err 是 *validator.ValidationError 时，会根据 rule 注入 suggestions 数组
+func (c *Context) ValidationError(err error) {
+	errData := H{
+		"code":    "VALIDATION_FAILED",
+		"message": err.Error(),
+	}
+	if ve, ok := err.(*validator.ValidationError); ok {
+		if ve.Field != "" {
+			errData["field"] = ve.Field
+		}
+		if ve.Rule != "" {
+			errData["rule"] = ve.Rule
+		}
+		// 根据规则自动注入修复建议
+		se := errors.NewValidationError(ve.Field, ve.Rule, ve.Message).WithSuggestionsForValidation()
+		if len(se.Suggestions) > 0 {
+			errData["suggestions"] = se.Suggestions
+		}
+	}
+	c.JSON(http.StatusUnprocessableEntity, H{"error": errData})
+}
+
+// InternalErrorWrap 返回 500 错误，带调用链，自动记录日志
 func (c *Context) InternalErrorWrap(err error, message string, metadata map[string]any) {
 	se := errors.NewStructuredError(errors.CodeInternalError, message).
-		WithFilePath(c.getCallerFilePath()).
-		WithLine(c.getCallerLine()).
+		WithFilePath(c.callerFile(1)).
+		WithLine(c.callerLine(1)).
 		AddCallFrame()
 
-	// 如果有底层错误，包装它
 	if err != nil {
 		se = se.Wrap(err, message)
 	}
-
-	// 添加元数据
 	for k, v := range metadata {
 		se.WithMetadata(k, v)
 	}
-
-	// 记录到错误链
 	c.errorChain = append(c.errorChain, se)
 
-	// 自动记录到日志
-	if globalLogger != nil {
+	if l := getLogger(); l != nil {
 		if err != nil {
-			globalLogger.Printf("[ERROR] %s: %v (caller: %s:%d)", message, err, c.getCallerFilePath(), c.getCallerLine())
+			l.Printf("[ERROR] %s: %v (caller: %s:%d)", message, err, c.callerFile(1), c.callerLine(1))
 		} else {
-			globalLogger.Printf("[ERROR] %s (caller: %s:%d)", message, c.getCallerFilePath(), c.getCallerLine())
+			l.Printf("[ERROR] %s (caller: %s:%d)", message, c.callerFile(1), c.callerLine(1))
 		}
 	}
 
-	errResp := errors.NewErrorResponse(se)
-	c.JSON(http.StatusInternalServerError, errResp)
+	c.JSON(http.StatusInternalServerError, errors.NewErrorResponse(se))
 }
 
-// BadRequestWrap 返回 400 错误，带调用链包装，自动记录日志
+// BadRequestWrap 返回 400 错误，带调用链，自动记录日志
 func (c *Context) BadRequestWrap(err error, message string) {
 	se := errors.NewStructuredError(errors.CodeBadRequest, message).
-		WithFilePath(c.getCallerFilePath()).
-		WithLine(c.getCallerLine()).
+		WithFilePath(c.callerFile(1)).
+		WithLine(c.callerLine(1)).
 		AddCallFrame()
 
 	if err != nil {
 		se = se.Wrap(err, message)
 	}
-
 	c.errorChain = append(c.errorChain, se)
 
-	// 自动记录到日志
-	if globalLogger != nil && err != nil {
-		globalLogger.Printf("[WARN] %s: %v", message, err)
+	if l := getLogger(); l != nil && err != nil {
+		l.Printf("[WARN] %s: %v", message, err)
 	}
 
 	c.JSON(http.StatusBadRequest, errors.NewErrorResponse(se))
 }
 
-// NotFoundWrap 返回 404 错误，带调用链包装，自动记录日志
+// NotFoundWrap 返回 404 错误，带调用链，自动记录日志
 func (c *Context) NotFoundWrap(err error, message string) {
 	se := errors.NewStructuredError(errors.CodeNotFound, message).
-		WithFilePath(c.getCallerFilePath()).
-		WithLine(c.getCallerLine()).
+		WithFilePath(c.callerFile(1)).
+		WithLine(c.callerLine(1)).
 		AddCallFrame()
 
 	if err != nil {
 		se = se.Wrap(err, message)
 	}
-
 	c.errorChain = append(c.errorChain, se)
 
-	// 自动记录到日志
-	if globalLogger != nil && err != nil {
-		globalLogger.Printf("[WARN] %s: %v", message, err)
+	if l := getLogger(); l != nil && err != nil {
+		l.Printf("[WARN] %s: %v", message, err)
 	}
 
 	c.JSON(http.StatusNotFound, errors.NewErrorResponse(se))
 }
 
-// ValidationErrorWrap 返回验证错误，带调用链包装，自动记录日志
+// ValidationErrorWrap 返回验证错误，带调用链，自动记录日志
 func (c *Context) ValidationErrorWrap(err error, field, message string) {
 	se := errors.NewValidationError(field, "", message).
-		WithFilePath(c.getCallerFilePath()).
-		WithLine(c.getCallerLine()).
+		WithFilePath(c.callerFile(1)).
+		WithLine(c.callerLine(1)).
 		AddCallFrame()
 
 	if err != nil {
 		se = se.Wrap(err, message)
 	}
-
 	c.errorChain = append(c.errorChain, se)
 
-	// 自动记录到日志
-	if globalLogger != nil && err != nil {
-		globalLogger.Printf("[WARN] validation failed: %s - %v", message, err)
+	if l := getLogger(); l != nil && err != nil {
+		l.Printf("[WARN] validation failed: %s - %v", message, err)
 	}
 
 	c.JSON(http.StatusUnprocessableEntity, errors.NewErrorResponse(se))
@@ -372,34 +481,23 @@ func (c *Context) GetErrorChain() []*errors.StructuredError {
 	return c.errorChain
 }
 
-// getCallerFilePath 获取调用者的文件路径
-func (c *Context) getCallerFilePath() string {
-	if _, file, _, ok := runtime.Caller(2); ok {
+// callerFile 返回调用者的文件路径，skip=1 表示直接调用者
+func (c *Context) callerFile(skip int) string {
+	if _, file, _, ok := runtime.Caller(skip + 1); ok {
 		return file
 	}
 	return ""
 }
 
-// getCallerLine 获取调用者的行号
-func (c *Context) getCallerLine() int {
-	if _, _, line, ok := runtime.Caller(2); ok {
+// callerLine 返回调用者的行号，skip=1 表示直接调用者
+func (c *Context) callerLine(skip int) int {
+	if _, _, line, ok := runtime.Caller(skip + 1); ok {
 		return line
 	}
 	return 0
 }
 
-// ValidationError 返回验证错误
-func (c *Context) ValidationError(err error) {
-	c.JSON(http.StatusUnprocessableEntity, H{
-		"error": H{
-			"code":    "VALIDATION_FAILED",
-			"message": err.Error(),
-		},
-	})
-}
-
-// NotFoundIfNotFound 如果 err 是"未找到"错误，返回 404 并发送响应
-// 返回 true 表示是 NotFound 错误（已发送响应），false 表示不是
+// NotFoundIfNotFound 如果 err != nil，返回 404；返回 true 表示已发送响应
 func (c *Context) NotFoundIfNotFound(err error, resourceName string) bool {
 	if err != nil {
 		c.NotFoundWrap(err, resourceName+" not found")
@@ -408,9 +506,7 @@ func (c *Context) NotFoundIfNotFound(err error, resourceName string) bool {
 	return false
 }
 
-// SuccessIfNotNil 如果 v 不为 nil，返回成功响应
-// 如果 v 为 nil，返回 404 并发送响应
-// 返回 true 表示 v 不为 nil（已发送响应），false 表示 v 为 nil（已发送响应）
+// SuccessIfNotNil 如果 v 不为 nil 返回 200，否则返回 404
 func (c *Context) SuccessIfNotNil(v interface{}, resourceName string) bool {
 	if v == nil || (reflect.ValueOf(v).Kind() == reflect.Ptr && reflect.ValueOf(v).IsNil()) {
 		c.NotFound(resourceName + " not found")
@@ -420,7 +516,7 @@ func (c *Context) SuccessIfNotNil(v interface{}, resourceName string) bool {
 	return true
 }
 
-// SuccessIfNotNilOrFail 类似 SuccessIfNotNil，但使用 Wrap 包装错误
+// SuccessIfNotNilOrFail 带 err 检查的 SuccessIfNotNil
 func (c *Context) SuccessIfNotNilOrFail(v interface{}, err error, resourceName string) bool {
 	if err != nil {
 		c.NotFoundWrap(err, resourceName+" not found")
@@ -434,8 +530,7 @@ func (c *Context) SuccessIfNotNilOrFail(v interface{}, err error, resourceName s
 	return true
 }
 
-// FailIfError 如果 err 不为 nil，发送 InternalErrorWrap 响应
-// 返回 true 表示有错误（已发送响应），false 表示没有错误
+// FailIfError 如果 err != nil，发送 500 响应；返回 true 表示有错误
 func (c *Context) FailIfError(err error, message string) bool {
 	if err != nil {
 		c.InternalErrorWrap(err, message, nil)
@@ -444,7 +539,7 @@ func (c *Context) FailIfError(err error, message string) bool {
 	return false
 }
 
-// FailIfErrorWithMeta 如果 err 不为 nil，发送 InternalErrorWrap 响应（带元数据）
+// FailIfErrorWithMeta 带元数据的 FailIfError
 func (c *Context) FailIfErrorWithMeta(err error, message string, metadata map[string]any) bool {
 	if err != nil {
 		c.InternalErrorWrap(err, message, metadata)
@@ -456,6 +551,70 @@ func (c *Context) FailIfErrorWithMeta(err error, message string, metadata map[st
 // Header 设置响应头
 func (c *Context) Header(key, value string) {
 	c.Writer.Header().Set(key, value)
+}
+
+// ClientIP 返回客户端真实 IP，按以下优先级：
+//  1. X-Forwarded-For 第一个非空段（穿越代理时的真实来源）
+//  2. X-Real-IP
+//  3. RemoteAddr 去除 :port
+//
+// 注意：X-Forwarded-For 由客户端可伪造，仅在受信代理后使用
+func (c *Context) ClientIP() string {
+	if xff := c.Request.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i >= 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if xri := c.Request.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+	if host, _, err := net.SplitHostPort(c.Request.RemoteAddr); err == nil {
+		return host
+	}
+	return c.Request.RemoteAddr
+}
+
+// Cookie 读取请求中的 Cookie 值
+func (c *Context) Cookie(name string) (string, error) {
+	cookie, err := c.Request.Cookie(name)
+	if err != nil {
+		return "", err
+	}
+	return cookie.Value, nil
+}
+
+// SetCookie 设置响应 Cookie，缺省 SameSite=Lax
+//   - maxAge < 0 表示立即过期（删除 cookie）
+//   - maxAge = 0 表示会话 cookie（关闭浏览器即失效）
+//   - maxAge > 0 表示秒数
+func (c *Context) SetCookie(name, value string, maxAge int, path, domain string, secure, httpOnly bool) {
+	if path == "" {
+		path = "/"
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		MaxAge:   maxAge,
+		Path:     path,
+		Domain:   domain,
+		Secure:   secure,
+		HttpOnly: httpOnly,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// Redirect 发送 HTTP 重定向，status 必须在 [300, 399] 范围内
+func (c *Context) Redirect(status int, url string) {
+	if status < 300 || status > 399 {
+		c.InternalErrorWrap(nil, "invalid redirect status code", map[string]any{
+			"status": status,
+			"url":    url,
+		})
+		return
+	}
+	c.statusCode = status
+	http.Redirect(c.Writer, c.Request, url, status)
 }
 
 // Status 设置响应状态码
@@ -473,14 +632,12 @@ func (c *Context) StatusCode() int {
 func matchPath(pattern, path string) bool {
 	patternParts := strings.Split(pattern, "/")
 	pathParts := strings.Split(path, "/")
-
 	if len(patternParts) != len(pathParts) {
 		return false
 	}
-
 	for i := range patternParts {
 		if strings.HasPrefix(patternParts[i], ":") {
-			continue // 参数匹配
+			continue
 		}
 		if patternParts[i] != pathParts[i] {
 			return false
@@ -494,9 +651,8 @@ func extractParams(pattern, path string) map[string]string {
 	params := make(map[string]string)
 	patternParts := strings.Split(pattern, "/")
 	pathParts := strings.Split(path, "/")
-
 	for i := range patternParts {
-		if strings.HasPrefix(patternParts[i], ":") {
+		if i < len(pathParts) && strings.HasPrefix(patternParts[i], ":") {
 			key := strings.TrimPrefix(patternParts[i], ":")
 			params[key] = pathParts[i]
 		}
@@ -515,11 +671,9 @@ func bindValuesToStruct(values map[string]string, v interface{}) error {
 		if jsonTag == "" || jsonTag == "-" {
 			continue
 		}
-
 		key := strings.Split(jsonTag, ",")[0]
 		if val, ok := values[key]; ok {
-			fieldValue := rv.Field(i)
-			if err := setStringValue(fieldValue, val); err != nil {
+			if err := setStringValue(rv.Field(i), val); err != nil {
 				return err
 			}
 		}
@@ -527,56 +681,24 @@ func bindValuesToStruct(values map[string]string, v interface{}) error {
 	return nil
 }
 
-var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-
 // setStringValue 根据字段类型设置值
 func setStringValue(v reflect.Value, s string) error {
 	switch v.Kind() {
 	case reflect.String:
 		v.SetString(s)
-	case reflect.Int:
-		i, err := strconv.Atoi(s)
-		if err != nil {
-			return err
-		}
-		v.SetInt(int64(i))
-	case reflect.Int8:
-		i, err := strconv.ParseInt(s, 10, 8)
-		if err != nil {
-			return err
-		}
-		v.SetInt(i)
-	case reflect.Int16:
-		i, err := strconv.ParseInt(s, 10, 16)
-		if err != nil {
-			return err
-		}
-		v.SetInt(i)
-	case reflect.Int32:
-		i, err := strconv.ParseInt(s, 10, 32)
-		if err != nil {
-			return err
-		}
-		v.SetInt(i)
-	case reflect.Int64:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		i, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
 			return err
 		}
 		v.SetInt(i)
-	case reflect.Uint:
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		i, err := strconv.ParseUint(s, 10, 64)
 		if err != nil {
 			return err
 		}
 		v.SetUint(i)
-	case reflect.Float32:
-		f, err := strconv.ParseFloat(s, 32)
-		if err != nil {
-			return err
-		}
-		v.SetFloat(f)
-	case reflect.Float64:
+	case reflect.Float32, reflect.Float64:
 		f, err := strconv.ParseFloat(s, 64)
 		if err != nil {
 			return err

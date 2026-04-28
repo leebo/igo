@@ -1,0 +1,8 @@
+*.db
+
+/auth_e2e
+/gin_adapter_demo
+/igo
+/pagination
+/upload
+/websocket

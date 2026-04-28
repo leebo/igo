@@ -180,19 +180,35 @@ func TestApp_GroupWithMiddlewares(t *testing.T) {
 			c.Success(H{"v1": true})
 		})
 	}, func(c *Context) {
-		c.Header("X-Group", "middleware")
+		c.Header("X-Group", "group-middleware")
 		c.Next()
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/test", nil)
 	w := httptest.NewRecorder()
-
 	app.Router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
-	// Note: Group middleware is only applied to routes registered within the group
+	if w.Header().Get("X-Global") != "global" {
+		t.Errorf("expected X-Global=global, got %q", w.Header().Get("X-Global"))
+	}
+	if w.Header().Get("X-Group") != "group-middleware" {
+		t.Errorf("expected X-Group=group-middleware, got %q", w.Header().Get("X-Group"))
+	}
+
+	// 验证 Group 中间件不影响组外路由
+	app.Get("/outside", func(c *Context) {
+		c.Success(H{"outside": true})
+	})
+	req2 := httptest.NewRequest(http.MethodGet, "/outside", nil)
+	w2 := httptest.NewRecorder()
+	app.Router.ServeHTTP(w2, req2)
+
+	if w2.Header().Get("X-Group") != "" {
+		t.Errorf("X-Group should not be set for routes outside the group")
+	}
 }
 
 func TestApp_Resources(t *testing.T) {

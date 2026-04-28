@@ -1,29 +1,22 @@
 package route
 
 import (
+	"sort"
 	"sync"
 )
 
 // Registry 路由元数据注册表
 type Registry struct {
-	mu         sync.RWMutex
-	routes     map[string]*RouteConfig // key: "GET /users/:id"
-	byName     map[string]*RouteConfig // key: route name
-	typeSchemas map[string]*TypeSchemaInfo
-}
-
-// TypeSchemaInfo 类型 Schema 信息
-type TypeSchemaInfo struct {
-	TypeName string
-	FilePath string
+	mu     sync.RWMutex
+	routes map[string]*RouteConfig // key: "GET /users/:id"
+	byName map[string]*RouteConfig // key: route name
 }
 
 // NewRegistry 创建新的注册表
 func NewRegistry() *Registry {
 	return &Registry{
-		routes:     make(map[string]*RouteConfig),
-		byName:     make(map[string]*RouteConfig),
-		typeSchemas: make(map[string]*TypeSchemaInfo),
+		routes: make(map[string]*RouteConfig),
+		byName: make(map[string]*RouteConfig),
 	}
 }
 
@@ -42,10 +35,11 @@ func (r *Registry) RegisterRoute(cfg *RouteConfig) {
 	defer r.mu.Unlock()
 
 	key := routeKey(cfg.Method, cfg.Path)
-	r.routes[key] = cfg
+	copyCfg := *cfg
+	r.routes[key] = &copyCfg
 
 	if cfg.HandlerName != "" {
-		r.byName[cfg.HandlerName] = cfg
+		r.byName[cfg.HandlerName] = &copyCfg
 	}
 }
 
@@ -54,7 +48,12 @@ func (r *Registry) GetRoute(method, path string) *RouteConfig {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	return r.routes[routeKey(method, path)]
+	cfg := r.routes[routeKey(method, path)]
+	if cfg == nil {
+		return nil
+	}
+	copyCfg := *cfg
+	return &copyCfg
 }
 
 // GetRouteByName 通过名称获取路由配置
@@ -62,7 +61,12 @@ func (r *Registry) GetRouteByName(name string) *RouteConfig {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	return r.byName[name]
+	cfg := r.byName[name]
+	if cfg == nil {
+		return nil
+	}
+	copyCfg := *cfg
+	return &copyCfg
 }
 
 // ListRoutes 列出所有路由配置
@@ -72,8 +76,15 @@ func (r *Registry) ListRoutes() []*RouteConfig {
 
 	result := make([]*RouteConfig, 0, len(r.routes))
 	for _, cfg := range r.routes {
-		result = append(result, cfg)
+		copyCfg := *cfg
+		result = append(result, &copyCfg)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Path != result[j].Path {
+			return result[i].Path < result[j].Path
+		}
+		return result[i].Method < result[j].Method
+	})
 	return result
 }
 
@@ -86,41 +97,11 @@ func (r *Registry) ListRoutesByTag(tag string) []*RouteConfig {
 	for _, cfg := range r.routes {
 		for _, t := range cfg.Tags {
 			if t == tag {
-				result = append(result, cfg)
+				copyCfg := *cfg
+				result = append(result, &copyCfg)
 				break
 			}
 		}
-	}
-	return result
-}
-
-// RegisterTypeSchema 注册类型 Schema
-func (r *Registry) RegisterTypeSchema(typeName, filePath string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.typeSchemas[typeName] = &TypeSchemaInfo{
-		TypeName: typeName,
-		FilePath: filePath,
-	}
-}
-
-// GetTypeSchema 获取类型 Schema 信息
-func (r *Registry) GetTypeSchema(typeName string) *TypeSchemaInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	return r.typeSchemas[typeName]
-}
-
-// ListTypeSchemas 列出所有类型 Schema
-func (r *Registry) ListTypeSchemas() []*TypeSchemaInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	result := make([]*TypeSchemaInfo, 0, len(r.typeSchemas))
-	for _, info := range r.typeSchemas {
-		result = append(result, info)
 	}
 	return result
 }
@@ -140,5 +121,9 @@ func (r *Registry) Clear() {
 
 	r.routes = make(map[string]*RouteConfig)
 	r.byName = make(map[string]*RouteConfig)
-	r.typeSchemas = make(map[string]*TypeSchemaInfo)
 }
+
+// DefaultRegistry 是兼容旧代码的全局路由元数据注册表。
+//
+// 新代码不应依赖它：每个 App 都有自己的 Registry，避免多 App/测试相互污染。
+var DefaultRegistry = NewRegistry()

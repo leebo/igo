@@ -1,0 +1,92 @@
+# igo Full AI Context
+
+igo provides compact offline and runtime metadata so AI coding tools can inspect a project without reading every source file.
+
+## Entry Files
+
+- `AGENTS.md`: short operational rules for AI agents
+- `CLAUDE.md`: framework usage guide
+- `docs/ai.md`: metadata contract and AI workflow
+- `context7.json`: package metadata for Context7-style consumers
+
+## Commands
+
+```bash
+go test ./...
+go run ./cmd/igo doctor .
+go run ./cmd/igo ai context . --format json
+go run ./cmd/igo ai routes .
+go run ./cmd/igo ai schemas .
+go run ./cmd/igo ai errors
+go run ./cmd/igo ai openapi .
+go run ./cmd/igo ai prompt . METHOD PATH
+go run ./cmd/igo ai workflow
+go run ./cmd/igo ai examples
+```
+
+## Runtime Endpoints
+
+Enable:
+
+```go
+app.RegisterAIRoutes()
+```
+
+Endpoints:
+
+- `GET /_ai/routes`: route metadata
+- `GET /_ai/schemas`: type schemas
+- `GET /_ai/errors`: framework error code table
+- `GET /_ai/info`: framework summary
+- `GET /_ai/openapi`: OpenAPI 3.0 JSON
+- `GET /_ai/conventions`: workflow and rules
+- `GET /_ai/middlewares`: global and route middleware names/order
+
+## Metadata Models
+
+Route metadata uses `core/route.RouteConfig`.
+
+Schema metadata uses `types.TypeSchema` and includes field names, JSON names, Go types, JSON types, validate tags, required flags, enum/min/max/gte/lte/len constraints, descriptions, defaults, and examples.
+
+OpenAPI generation uses both models and writes `components.schemas`. Unknown dynamic response values are represented as generic objects instead of unresolved `$ref` values.
+
+## Handler Conventions
+
+```go
+req, ok := igo.BindAndValidate[CreateUserRequest](c)
+if !ok {
+	return
+}
+```
+
+```go
+q, ok := igo.BindQueryAndValidate[ListQuery](c)
+if !ok {
+	return
+}
+```
+
+```go
+p, ok := igo.BindPathAndValidate[PathParams](c)
+if !ok {
+	return
+}
+```
+
+Use wrap helpers in error branches:
+
+```go
+if err != nil {
+	c.InternalErrorWrap(err, "failed to create user", map[string]any{"email": req.Email})
+	return
+}
+```
+
+Register response-only DTOs:
+
+```go
+app.RegisterSchema(UserResponse{})
+igo.RegisterAppSchema[UserResponse](app)
+```
+
+Legacy global registration remains available as `igo.RegisterSchema[T]()` but is not recommended for multi-App tests or services.

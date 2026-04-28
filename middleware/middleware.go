@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -21,57 +22,90 @@ func Logger() core.MiddlewareFunc {
 			method,
 			path,
 			c.Request.URL.RawQuery,
-			getStatus(c),
+			c.StatusCode(),
 			time.Since(start),
 		)
 	}
 }
 
-func getStatus(c *core.Context) int {
-	return c.StatusCode()
-}
-
-// Recovery 恢复中间件
+// Recovery panic 恢复中间件，仅在尚未写入响应时才写入 500
 func Recovery() core.MiddlewareFunc {
 	return func(c *core.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				c.InternalError("Internal server error")
+				if c.StatusCode() == 0 {
+					c.InternalError(fmt.Sprintf("Internal server error: %v", err))
+				}
 			}
 		}()
 		c.Next()
 	}
 }
 
-// CORS 跨域中间件
-func CORS() core.MiddlewareFunc {
-	return func(c *core.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
+// CORSConfig CORS 配置
+type CORSConfig struct {
+	AllowOrigins []string // 允许的源，默认 ["*"]
+	AllowMethods []string // 允许的方法
+	AllowHeaders []string // 允许的请求头
+}
 
-		if c.Request.Method == "OPTIONS" {
+var defaultCORSConfig = CORSConfig{
+	AllowOrigins: []string{"*"},
+	AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
+	AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
+}
+
+// CORS 跨域中间件（允许所有源，开发用）
+// 生产环境请使用 CORSWithConfig 指定允许的源
+func CORS() core.MiddlewareFunc {
+	return CORSWithConfig(defaultCORSConfig)
+}
+
+// CORSWithConfig 可配置的跨域中间件
+func CORSWithConfig(cfg CORSConfig) core.MiddlewareFunc {
+	origins := cfg.AllowOrigins
+	if len(origins) == 0 {
+		origins = defaultCORSConfig.AllowOrigins
+	}
+	methods := cfg.AllowMethods
+	if len(methods) == 0 {
+		methods = defaultCORSConfig.AllowMethods
+	}
+	headers := cfg.AllowHeaders
+	if len(headers) == 0 {
+		headers = defaultCORSConfig.AllowHeaders
+	}
+
+	originStr := joinStrings(origins, ", ")
+	methodStr := joinStrings(methods, ", ")
+	headerStr := joinStrings(headers, ", ")
+
+	return func(c *core.Context) {
+		c.Header("Access-Control-Allow-Origin", originStr)
+		c.Header("Access-Control-Allow-Methods", methodStr)
+		c.Header("Access-Control-Allow-Headers", headerStr)
+
+		if c.Request.Method == http.MethodOptions {
 			c.Status(http.StatusNoContent)
 			return
 		}
-
 		c.Next()
 	}
 }
 
-// RateLimit 简单限流中间件（基于 IP）
-func RateLimit(requests int, window time.Duration) core.MiddlewareFunc {
-	// TODO: 实现基于 Redis 的分布式限流
-	// 目前仅记录限流配置，实际限流需要配合 plugin/cache/redis 使用
+// RateLimit 限流中间件占位（未实现实际限流逻辑）
+// 实际限流需配合 plugin/cache/redis 实现分布式限流
+func RateLimit(_ int, _ time.Duration) core.MiddlewareFunc {
+	log.Println("[igo/middleware] RateLimit: stub implementation, no actual limiting applied")
 	return func(c *core.Context) {
 		c.Next()
 	}
 }
 
-// Auth 认证中间件（示例，需要配合具体实现）
+// Auth 认证中间件示例（仅检查 Authorization header 非空）
+// 生产环境请使用 plugin/auth JWT 验证
 func Auth() core.MiddlewareFunc {
 	return func(c *core.Context) {
-		// 示例：检查 Authorization header
 		auth := c.Request.Header.Get("Authorization")
 		if auth == "" {
 			c.Unauthorized("Authorization header required")
@@ -94,6 +128,16 @@ func RequestID() core.MiddlewareFunc {
 }
 
 func generateID() string {
-	// 简化实现
-	return time.Now().Format("20060102150405.000000")
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+func joinStrings(ss []string, sep string) string {
+	result := ""
+	for i, s := range ss {
+		if i > 0 {
+			result += sep
+		}
+		result += s
+	}
+	return result
 }

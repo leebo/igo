@@ -1,0 +1,1 @@
+hello from igo static files

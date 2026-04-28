@@ -1,32 +1,37 @@
 package validator
 
 import (
-	"regexp"
+	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
-// Validate 验证结构体
+// Validate 验证结构体，接受指针或值类型
 func Validate(v interface{}) error {
-	t := reflect.TypeOf(v).Elem()
-	rv := reflect.ValueOf(v).Elem()
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Ptr {
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.Struct {
+		return fmt.Errorf("validator: expected struct, got %s", rv.Kind())
+	}
+	t := rv.Type()
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		fieldValue := rv.Field(i)
 
-		// 获取验证标签
 		validateTag := field.Tag.Get("validate")
 		if validateTag == "" || validateTag == "-" {
 			continue
 		}
 
-		// 解析标签
 		rules := strings.Split(validateTag, "|")
 		for _, rule := range rules {
 			rule = strings.TrimSpace(rule)
-			if err := applyRule(fieldValue, field.Name, rule); err != nil {
+			if err := applyRule(fieldValue, field.Name, rule, rv); err != nil {
 				return err
 			}
 		}
@@ -34,8 +39,9 @@ func Validate(v interface{}) error {
 	return nil
 }
 
-func applyRule(v reflect.Value, fieldName, rule string) error {
-	// 解析规则（如 "min:2", "email", "required"）
+// applyRule 对单个字段应用一条验证规则
+// structVal 用于 eqfield 等需要跨字段引用的规则
+func applyRule(v reflect.Value, fieldName, rule string, structVal reflect.Value) error {
 	parts := strings.SplitN(rule, ":", 2)
 	name := parts[0]
 	args := ""
@@ -46,51 +52,75 @@ func applyRule(v reflect.Value, fieldName, rule string) error {
 	switch name {
 	case "required":
 		if isEmpty(v) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " is required"}
+			return &ValidationError{Field: fieldName, Rule: "required", Message: fieldName + " is required"}
 		}
 	case "email":
 		if !isEmpty(v) && !isEmail(v.String()) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " must be a valid email"}
+			return &ValidationError{Field: fieldName, Rule: "email", Message: fieldName + " must be a valid email"}
 		}
 	case "min":
 		if !isEmpty(v) && !minValue(v, args) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " must be at least " + args}
+			return &ValidationError{Field: fieldName, Rule: "min", Message: fieldName + " must be at least " + args}
 		}
 	case "max":
 		if !isEmpty(v) && !maxValue(v, args) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " must be at most " + args}
+			return &ValidationError{Field: fieldName, Rule: "max", Message: fieldName + " must be at most " + args}
 		}
 	case "gte":
 		if !isEmpty(v) && !gteValue(v, args) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " must be greater than or equal to " + args}
+			return &ValidationError{Field: fieldName, Rule: "gte", Message: fieldName + " must be >= " + args}
 		}
 	case "lte":
 		if !isEmpty(v) && !lteValue(v, args) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " must be less than or equal to " + args}
+			return &ValidationError{Field: fieldName, Rule: "lte", Message: fieldName + " must be <= " + args}
 		}
 	case "gt":
 		if !isEmpty(v) && !gtValue(v, args) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " must be greater than " + args}
+			return &ValidationError{Field: fieldName, Rule: "gt", Message: fieldName + " must be > " + args}
 		}
 	case "lt":
 		if !isEmpty(v) && !ltValue(v, args) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " must be less than " + args}
+			return &ValidationError{Field: fieldName, Rule: "lt", Message: fieldName + " must be < " + args}
 		}
 	case "len":
 		if !isEmpty(v) && !lenValue(v, args) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " length must be " + args}
+			return &ValidationError{Field: fieldName, Rule: "len", Message: fieldName + " length must be " + args}
 		}
 	case "regex":
 		if !isEmpty(v) && !matchRegex(v.String(), args) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " format is invalid"}
+			return &ValidationError{Field: fieldName, Rule: "regex", Message: fieldName + " format is invalid"}
 		}
 	case "uuid":
 		if !isEmpty(v) && !isUUID(v.String()) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " must be a valid UUID"}
+			return &ValidationError{Field: fieldName, Rule: "uuid", Message: fieldName + " must be a valid UUID"}
 		}
 	case "url":
 		if !isEmpty(v) && !isURL(v.String()) {
-			return &ValidationError{Field: fieldName, Message: fieldName + " must be a valid URL"}
+			return &ValidationError{Field: fieldName, Rule: "url", Message: fieldName + " must be a valid URL"}
+		}
+	case "enum":
+		if !isEmpty(v) && v.Kind() == reflect.String {
+			opts := strings.Split(args, ",")
+			found := false
+			for _, opt := range opts {
+				if strings.TrimSpace(opt) == v.String() {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return &ValidationError{Field: fieldName, Rule: "enum", Message: fieldName + " must be one of: " + args}
+			}
+		}
+	case "eqfield":
+		if !isEmpty(v) {
+			other := structVal.FieldByName(args)
+			if !other.IsValid() {
+				return &ValidationError{Field: fieldName, Rule: "eqfield", Message: "eqfield: field " + args + " not found"}
+			}
+			if fmt.Sprintf("%v", v.Interface()) != fmt.Sprintf("%v", other.Interface()) {
+				return &ValidationError{Field: fieldName, Rule: "eqfield", Message: fieldName + " must equal " + args}
+			}
 		}
 	}
 	return nil
@@ -108,6 +138,8 @@ func isEmpty(v reflect.Value) bool {
 		return v.Float() == 0
 	case reflect.Bool:
 		return !v.Bool()
+	case reflect.Ptr, reflect.Interface:
+		return v.IsNil()
 	default:
 		return false
 	}
@@ -154,13 +186,8 @@ func maxValue(v reflect.Value, arg string) bool {
 	return true
 }
 
-func gteValue(v reflect.Value, arg string) bool {
-	return minValue(v, arg)
-}
-
-func lteValue(v reflect.Value, arg string) bool {
-	return maxValue(v, arg)
-}
+func gteValue(v reflect.Value, arg string) bool { return minValue(v, arg) }
+func lteValue(v reflect.Value, arg string) bool { return maxValue(v, arg) }
 
 func gtValue(v reflect.Value, arg string) bool {
 	switch v.Kind() {
@@ -220,9 +247,10 @@ func isURL(s string) bool {
 	return urlRegex.MatchString(s)
 }
 
-// ValidationError 验证错误
+// ValidationError 验证错误，包含字段名和规则
 type ValidationError struct {
 	Field   string
+	Rule    string
 	Message string
 }
 
