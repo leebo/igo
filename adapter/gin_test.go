@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/igo/igo/core"
+	"github.com/leebo/igo/core"
 )
 
 func TestMiddlewareBasic(t *testing.T) {

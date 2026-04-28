@@ -8,8 +8,8 @@ package middleware
 import (
 	"strconv"
 
-	"github.com/igo/igo/plugin/auth"
-	"github.com/igo/igo/core"
+	"github.com/leebo/igo/core"
+	"github.com/leebo/igo/plugin/auth"
 )
 
 // Auth 认证中间件

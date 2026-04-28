@@ -1,4 +1,4 @@
-module github.com/igo/igo
+module github.com/leebo/igo
 
 go 1.25.0
 

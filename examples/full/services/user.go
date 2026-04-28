@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/igo/igo/examples/full/models"
-	"github.com/igo/igo/examples/full/repositories"
-	"github.com/igo/igo/plugin/cache"
+	"github.com/leebo/igo/examples/full/models"
+	"github.com/leebo/igo/examples/full/repositories"
+	"github.com/leebo/igo/plugin/cache"
 )
 
 // UserService 用户服务

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/igo/igo/core/errors"
-	"github.com/igo/igo/core/validator"
-	"github.com/igo/igo/types"
+	"github.com/leebo/igo/core/errors"
+	"github.com/leebo/igo/core/validator"
+	"github.com/leebo/igo/types"
 )
 
 // registerSchemaOnce 把类型注册到当前 App 的 schema 注册表（已注册则跳过反射）

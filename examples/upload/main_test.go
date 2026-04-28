@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	igo "github.com/igo/igo"
+	igo "github.com/leebo/igo"
 )
 
 // setupTestApp 把 uploadDir 切到临时目录，避免污染仓库

@@ -19,8 +19,8 @@ import (
 	"sort"
 	"strings"
 
-	igo "github.com/igo/igo"
-	"github.com/igo/igo/core"
+	igo "github.com/leebo/igo"
+	"github.com/leebo/igo/core"
 )
 
 // =============================================================================
@@ -99,11 +99,11 @@ func (q *ListQuery) applyDefaults() {
 // =============================================================================
 
 type ListResponse[T any] struct {
-	Data      []T   `json:"data"`
-	Total     int   `json:"total"`     // 过滤后的总数
-	Page      int   `json:"page"`
-	Size      int   `json:"size"`
-	PageCount int   `json:"pageCount"` // 总页数，前端方便分页器渲染
+	Data      []T `json:"data"`
+	Total     int `json:"total"` // 过滤后的总数
+	Page      int `json:"page"`
+	Size      int `json:"size"`
+	PageCount int `json:"pageCount"` // 总页数，前端方便分页器渲染
 }
 
 // =============================================================================

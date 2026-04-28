@@ -6,7 +6,7 @@
 package handlers
 
 import (
-	"github.com/igo/igo/core"
+	"github.com/leebo/igo/core"
 )
 
 // Health 健康检查处理

@@ -6,8 +6,8 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/igo/igo"
-	"github.com/igo/igo/adapter"
+	"github.com/leebo/igo"
+	"github.com/leebo/igo/adapter"
 )
 
 func main() {

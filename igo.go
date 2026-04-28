@@ -25,8 +25,8 @@
 package igo
 
 import (
-	"github.com/igo/igo/core"
-	"github.com/igo/igo/middleware"
+	"github.com/leebo/igo/core"
+	"github.com/leebo/igo/middleware"
 )
 
 // App 是 igo 应用的实例

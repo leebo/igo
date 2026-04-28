@@ -8,9 +8,9 @@
 package handlers
 
 import (
-	"github.com/igo/igo/core"
-	"github.com/igo/igo/examples/full/models"
-	"github.com/igo/igo/examples/full/services"
+	"github.com/leebo/igo/core"
+	"github.com/leebo/igo/examples/full/models"
+	"github.com/leebo/igo/examples/full/services"
 )
 
 // UserHandler 用户 HTTP 处理

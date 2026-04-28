@@ -6,7 +6,7 @@
 package config
 
 import (
-	"github.com/igo/igo/plugin/config"
+	"github.com/leebo/igo/plugin/config"
 )
 
 // LoadConfig 加载配置

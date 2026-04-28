@@ -8,16 +8,16 @@ package main
 import (
 	"time"
 
-	igo "github.com/igo/igo"
-	"github.com/igo/igo/examples/full/config"
-	"github.com/igo/igo/examples/full/handlers"
-	"github.com/igo/igo/examples/full/repositories"
-	"github.com/igo/igo/examples/full/routes"
-	"github.com/igo/igo/examples/full/services"
-	"github.com/igo/igo/plugin/auth"
-	"github.com/igo/igo/plugin/cache"
-	"github.com/igo/igo/plugin/database"
-	"github.com/igo/igo/plugin/logging"
+	igo "github.com/leebo/igo"
+	"github.com/leebo/igo/examples/full/config"
+	"github.com/leebo/igo/examples/full/handlers"
+	"github.com/leebo/igo/examples/full/repositories"
+	"github.com/leebo/igo/examples/full/routes"
+	"github.com/leebo/igo/examples/full/services"
+	"github.com/leebo/igo/plugin/auth"
+	"github.com/leebo/igo/plugin/cache"
+	"github.com/leebo/igo/plugin/database"
+	"github.com/leebo/igo/plugin/logging"
 )
 
 var (

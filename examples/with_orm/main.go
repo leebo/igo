@@ -8,10 +8,10 @@
 package main
 
 import (
-	igo "github.com/igo/igo"
-	"github.com/igo/igo/core"
-	"github.com/igo/igo/middleware"
-	"github.com/igo/igo/plugin/database"
+	igo "github.com/leebo/igo"
+	"github.com/leebo/igo/core"
+	"github.com/leebo/igo/middleware"
+	"github.com/leebo/igo/plugin/database"
 	"gorm.io/gorm"
 )
 

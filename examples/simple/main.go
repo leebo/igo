@@ -3,9 +3,9 @@ package main
 import (
 	"net/http"
 
-	igo "github.com/igo/igo"
-	"github.com/igo/igo/core"
-	"github.com/igo/igo/middleware"
+	igo "github.com/leebo/igo"
+	"github.com/leebo/igo/core"
+	"github.com/leebo/igo/middleware"
 )
 
 // User 模型
@@ -27,7 +27,7 @@ func main() {
 	// GET /health
 	app.Get("/health", func(c *core.Context) {
 		c.Success(core.H{
-			"status": "ok",
+			"status":  "ok",
 			"version": "1.0.0",
 		})
 	})

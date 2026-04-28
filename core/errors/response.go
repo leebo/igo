@@ -9,15 +9,15 @@ type ErrorResponse struct {
 
 // ErrorDetail 错误详情
 type ErrorDetail struct {
-	Code        string        `json:"code"`
-	Message     string        `json:"message"`
-	Field       string        `json:"field,omitempty"`
-	Suggestions []string      `json:"suggestions,omitempty"`
-	Context     *ErrorContext `json:"context,omitempty"`
-	Details     []ErrorDetail `json:"details,omitempty"`    // 多字段错误时使用
+	Code        string         `json:"code"`
+	Message     string         `json:"message"`
+	Field       string         `json:"field,omitempty"`
+	Suggestions []string       `json:"suggestions,omitempty"`
+	Context     *ErrorContext  `json:"context,omitempty"`
+	Details     []ErrorDetail  `json:"details,omitempty"` // 多字段错误时使用
 	Metadata    map[string]any `json:"metadata,omitempty"`
-	CallChain   []CallFrame   `json:"callChain,omitempty"` // 调用链
-	RootCause   *ErrorDetail  `json:"rootCause,omitempty"` // 根本原因
+	CallChain   []CallFrame    `json:"callChain,omitempty"` // 调用链
+	RootCause   *ErrorDetail   `json:"rootCause,omitempty"` // 根本原因
 }
 
 // NewErrorResponse 从 StructuredError 创建错误响应
@@ -42,7 +42,7 @@ func NewErrorResponse(err *StructuredError) ErrorResponse {
 	if err.FilePath != "" || err.Line != 0 {
 		detail.Context = &ErrorContext{
 			FilePath:    err.FilePath,
-			Line:       err.Line,
+			Line:        err.Line,
 			Suggestions: err.Suggestions,
 		}
 	}

@@ -24,9 +24,9 @@ import (
 	"sync"
 	"time"
 
-	igo "github.com/igo/igo"
-	"github.com/igo/igo/core"
-	"github.com/igo/igo/plugin/auth"
+	igo "github.com/leebo/igo"
+	"github.com/leebo/igo/core"
+	"github.com/leebo/igo/plugin/auth"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -43,9 +43,9 @@ type storedUser struct {
 }
 
 type userStore struct {
-	mu    sync.Mutex
-	byID  map[int64]*storedUser
-	byUN  map[string]*storedUser
+	mu     sync.Mutex
+	byID   map[int64]*storedUser
+	byUN   map[string]*storedUser
 	nextID int64
 }
 

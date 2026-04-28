@@ -34,23 +34,23 @@ type ListResponse[T any] struct {
 
 // ErrorCode 错误码常量
 const (
-	ErrCodeBadRequest      = "BAD_REQUEST"
-	ErrCodeUnauthorized    = "UNAUTHORIZED"
-	ErrCodeForbidden       = "FORBIDDEN"
-	ErrCodeNotFound        = "NOT_FOUND"
-	ErrCodeValidation      = "VALIDATION_FAILED"
-	ErrCodeInternalError   = "INTERNAL_ERROR"
+	ErrCodeBadRequest    = "BAD_REQUEST"
+	ErrCodeUnauthorized  = "UNAUTHORIZED"
+	ErrCodeForbidden     = "FORBIDDEN"
+	ErrCodeNotFound      = "NOT_FOUND"
+	ErrCodeValidation    = "VALIDATION_FAILED"
+	ErrCodeInternalError = "INTERNAL_ERROR"
 )
 
 // HTTP 状态码常量
 const (
-	StatusOK                = http.StatusOK
-	StatusCreated           = http.StatusCreated
-	StatusNoContent         = http.StatusNoContent
-	StatusBadRequest        = http.StatusBadRequest
-	StatusUnauthorized      = http.StatusUnauthorized
-	StatusForbidden         = http.StatusForbidden
-	StatusNotFound          = http.StatusNotFound
+	StatusOK                  = http.StatusOK
+	StatusCreated             = http.StatusCreated
+	StatusNoContent           = http.StatusNoContent
+	StatusBadRequest          = http.StatusBadRequest
+	StatusUnauthorized        = http.StatusUnauthorized
+	StatusForbidden           = http.StatusForbidden
+	StatusNotFound            = http.StatusNotFound
 	StatusUnprocessableEntity = http.StatusUnprocessableEntity
-	StatusInternalError     = http.StatusInternalServerError
+	StatusInternalError       = http.StatusInternalServerError
 )

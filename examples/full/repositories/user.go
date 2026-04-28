@@ -9,8 +9,8 @@ package repositories
 import (
 	"context"
 
-	"github.com/igo/igo/examples/full/models"
-	"github.com/igo/igo/plugin/database"
+	"github.com/leebo/igo/examples/full/models"
+	"github.com/leebo/igo/plugin/database"
 	"gorm.io/gorm"
 )
 

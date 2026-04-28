@@ -133,11 +133,11 @@ func (c *Config) Default(key string, value interface{}) *Config {
 
 // AppConfig 应用配置结构
 type AppConfig struct {
-	Server ServerConfig `mapstructure:"server"`
+	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
-	Redis RedisConfig `mapstructure:"redis"`
-	JWT JWTConfig `mapstructure:"jwt"`
-	Log LogConfig `mapstructure:"log"`
+	Redis    RedisConfig    `mapstructure:"redis"`
+	JWT      JWTConfig      `mapstructure:"jwt"`
+	Log      LogConfig      `mapstructure:"log"`
 }
 
 // ServerConfig 服务器配置

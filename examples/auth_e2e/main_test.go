@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	igo "github.com/igo/igo"
-	"github.com/igo/igo/plugin/auth"
+	igo "github.com/leebo/igo"
+	"github.com/leebo/igo/plugin/auth"
 )
 
 // =============================================================================

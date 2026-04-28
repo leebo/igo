@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/igo/igo/core"
+	"github.com/leebo/igo/core"
 )
 
 func TestLogger(t *testing.T) {

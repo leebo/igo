@@ -8,23 +8,23 @@ import (
 // CallFrame 调用栈中的一帧
 type CallFrame struct {
 	FunctionName string `json:"functionName"`
-	FilePath    string `json:"filePath"`
-	Line        int    `json:"line"`
+	FilePath     string `json:"filePath"`
+	Line         int    `json:"line"`
 }
 
 // StructuredError 带有完整元数据的错误
 type StructuredError struct {
-	Code        string            `json:"code"`
-	Message     string            `json:"message"`
-	Field       string            `json:"field,omitempty"`
-	Rule        string            `json:"rule,omitempty"`
-	Value       any               `json:"value,omitempty"`
-	FilePath    string            `json:"filePath,omitempty"`
-	Line        int               `json:"line,omitempty"`
+	Code        string           `json:"code"`
+	Message     string           `json:"message"`
+	Field       string           `json:"field,omitempty"`
+	Rule        string           `json:"rule,omitempty"`
+	Value       any              `json:"value,omitempty"`
+	FilePath    string           `json:"filePath,omitempty"`
+	Line        int              `json:"line,omitempty"`
 	Suggestions []string         `json:"suggestions,omitempty"`
 	Metadata    map[string]any   `json:"metadata,omitempty"`
-	CallChain   []CallFrame       `json:"callChain,omitempty"`   // 调用链
-	RootCause   *StructuredError  `json:"rootCause,omitempty"`    // 根本原因
+	CallChain   []CallFrame      `json:"callChain,omitempty"` // 调用链
+	RootCause   *StructuredError `json:"rootCause,omitempty"` // 根本原因
 }
 
 // ValidationErrors 验证错误集合
@@ -42,16 +42,16 @@ type ErrorContext struct {
 
 // ErrorCode 定义
 const (
-	CodeBadRequest      = "BAD_REQUEST"
-	CodeUnauthorized    = "UNAUTHORIZED"
-	CodeForbidden       = "FORBIDDEN"
-	CodeNotFound        = "NOT_FOUND"
-	CodeValidation      = "VALIDATION_FAILED"
-	CodeInternalError   = "INTERNAL_ERROR"
-	CodeInvalidJSON     = "INVALID_JSON"
-	CodeMissingField    = "MISSING_FIELD"
-	CodeInvalidFormat   = "INVALID_FORMAT"
-	CodeOutOfRange      = "OUT_OF_RANGE"
+	CodeBadRequest    = "BAD_REQUEST"
+	CodeUnauthorized  = "UNAUTHORIZED"
+	CodeForbidden     = "FORBIDDEN"
+	CodeNotFound      = "NOT_FOUND"
+	CodeValidation    = "VALIDATION_FAILED"
+	CodeInternalError = "INTERNAL_ERROR"
+	CodeInvalidJSON   = "INVALID_JSON"
+	CodeMissingField  = "MISSING_FIELD"
+	CodeInvalidFormat = "INVALID_FORMAT"
+	CodeOutOfRange    = "OUT_OF_RANGE"
 )
 
 // NewStructuredError 创建结构化错误
@@ -141,8 +141,8 @@ func (e *StructuredError) Wrap(err error, message string) *StructuredError {
 	if pc, file, line, ok := runtime.Caller(1); ok {
 		wrapped.CallChain = append(wrapped.CallChain, CallFrame{
 			FunctionName: runtime.FuncForPC(pc).Name(),
-			FilePath:    file,
-			Line:        line,
+			FilePath:     file,
+			Line:         line,
 		})
 	}
 
@@ -154,8 +154,8 @@ func (e *StructuredError) AddCallFrame() *StructuredError {
 	if pc, file, line, ok := runtime.Caller(1); ok {
 		e.CallChain = append(e.CallChain, CallFrame{
 			FunctionName: runtime.FuncForPC(pc).Name(),
-			FilePath:    file,
-			Line:        line,
+			FilePath:     file,
+			Line:         line,
 		})
 	}
 	return e

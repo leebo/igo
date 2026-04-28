@@ -3,11 +3,11 @@ package errors
 // ErrorCodeInfo 描述一个框架支持的错误码 + 触发它的 Context helper
 // 暴露给 /_ai/errors 端点，让 AI 不必读源码就知道该用哪个 helper 触发哪个状态码
 type ErrorCodeInfo struct {
-	Code        string `json:"code"`         // 错误码常量值（如 "BAD_REQUEST"）
-	StatusCode  int    `json:"statusCode"`   // 对应的 HTTP 状态码
-	HelperPlain string `json:"helperPlain"`  // 普通版 helper 方法名（不带 err 链）
-	HelperWrap  string `json:"helperWrap"`   // 带 err 链的 *Wrap 方法名（无则为空）
-	Description string `json:"description"`  // 何时使用
+	Code        string `json:"code"`        // 错误码常量值（如 "BAD_REQUEST"）
+	StatusCode  int    `json:"statusCode"`  // 对应的 HTTP 状态码
+	HelperPlain string `json:"helperPlain"` // 普通版 helper 方法名（不带 err 链）
+	HelperWrap  string `json:"helperWrap"`  // 带 err 链的 *Wrap 方法名（无则为空）
+	Description string `json:"description"` // 何时使用
 }
 
 // ListErrorCodes 返回框架支持的全部错误码 + 对应 Context helper 信息

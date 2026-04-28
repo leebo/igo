@@ -7,16 +7,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/igo/igo/ai/schema"
-	routepkg "github.com/igo/igo/core/route"
-	"github.com/igo/igo/types"
+	"github.com/leebo/igo/ai/schema"
+	routepkg "github.com/leebo/igo/core/route"
+	"github.com/leebo/igo/types"
 )
 
 func TestLoadStaticProjectRoutes(t *testing.T) {
 	dir := t.TempDir()
 	src := `package sample
 
-import "github.com/igo/igo/core"
+import "github.com/leebo/igo/core"
 
 type App struct{}
 type CreateUserRequest struct {

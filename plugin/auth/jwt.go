@@ -11,8 +11,8 @@ import (
 // Config JWT 配置
 type Config struct {
 	SecretKey     string        // 密钥
-	Expiration    time.Duration  // 过期时间
-	RefreshExpiry time.Duration  // 刷新过期时间
+	Expiration    time.Duration // 过期时间
+	RefreshExpiry time.Duration // 刷新过期时间
 }
 
 // Claims JWT Claims
@@ -33,14 +33,14 @@ type TokenResponse struct {
 
 // Client JWT 客户端
 type Client struct {
-	cfg            Config
+	cfg           Config
 	refreshSecret []byte
 }
 
 // New 创建 JWT 客户端
 func New(cfg Config) *Client {
 	return &Client{
-		cfg:            cfg,
+		cfg:           cfg,
 		refreshSecret: []byte(cfg.SecretKey + "_refresh"),
 	}
 }

@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	igo "github.com/igo/igo"
-	"github.com/igo/igo/core"
+	igo "github.com/leebo/igo"
+	"github.com/leebo/igo/core"
 
 	"github.com/gorilla/websocket"
 )

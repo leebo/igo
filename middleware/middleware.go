@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/igo/igo/core"
+	"github.com/leebo/igo/core"
 )
 
 // Logger 日志中间件

@@ -16,8 +16,8 @@ package main
 import (
 	"errors"
 
-	igo "github.com/igo/igo"
-	"github.com/igo/igo/core"
+	igo "github.com/leebo/igo"
+	"github.com/leebo/igo/core"
 )
 
 // User 业务实体

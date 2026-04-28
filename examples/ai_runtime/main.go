@@ -4,7 +4,7 @@ package main
 import (
 	"net/http"
 
-	igo "github.com/igo/igo"
+	igo "github.com/leebo/igo"
 )
 
 type UserPath struct {

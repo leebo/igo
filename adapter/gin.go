@@ -4,27 +4,27 @@
 //
 // 方式 1: 混合架构（推荐用于迁移或需要 gin 完整生态的场景）
 //
-//  import (
-//      "github.com/gin-gonic/gin"
-//      "github.com/igo/igo"
-//      "github.com/igo/igo/adapter"
-//  )
+//	import (
+//	    "github.com/gin-gonic/gin"
+//	    "github.com/leebo/igo"
+//	    "github.com/leebo/igo/adapter"
+//	)
 //
-//  app := igo.New()
-//  ge := adapter.NewGinEngine()
-//  ge.Use(gin.Logger())
-//  ge.Use(gin.Recovery())
-//  ge.GET("/api/ping", func(c *gin.Context) { c.JSON(200, gin.H{"msg":"pong"}) })
-//  adapter.Mount(app, "/api", ge)  // /api/* 由 gin 处理
+//	app := igo.New()
+//	ge := adapter.NewGinEngine()
+//	ge.Use(gin.Logger())
+//	ge.Use(gin.Recovery())
+//	ge.GET("/api/ping", func(c *gin.Context) { c.JSON(200, gin.H{"msg":"pong"}) })
+//	adapter.Mount(app, "/api", ge)  // /api/* 由 gin 处理
 //
-//  app.GET("/web/health", func(c *igo.Context) { c.Success(igo.H{"status": "ok"}) })
+//	app.GET("/web/health", func(c *igo.Context) { c.Success(igo.H{"status": "ok"}) })
 //
 // 方式 2: Gin 风格 API（用于用 gin 风格编写中间件）
 //
-//  app.Use(adapter.Middleware(func(gc *adapter.GinContext) {
-//      gc.Header("X-Custom", "value")
-//      gc.Next()
-//  }))
+//	app.Use(adapter.Middleware(func(gc *adapter.GinContext) {
+//	    gc.Header("X-Custom", "value")
+//	    gc.Next()
+//	}))
 package adapter
 
 import (
@@ -32,7 +32,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/igo/igo/core"
+	"github.com/leebo/igo/core"
 )
 
 // NewGinEngine 创建一个新的 gin Engine
@@ -52,14 +52,15 @@ func NewGinEngineWithMode(mode string) *gin.Engine {
 //
 // 示例：
 //
-//  app := igo.New()
-//  ge := gin.New()
-//  ge.Use(gin.Logger())
-//  ge.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"msg":"pong"}) })
-//  adapter.Mount(app, "/api", ge)
+//	app := igo.New()
+//	ge := gin.New()
+//	ge.Use(gin.Logger())
+//	ge.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"msg":"pong"}) })
+//	adapter.Mount(app, "/api", ge)
 //
-//  // GET /api/ping -> gin 处理
-//  // GET /web/health -> igo 处理
+//	// GET /api/ping -> gin 处理
+//	// GET /web/health -> igo 处理
+//
 // Mount 将 gin.Engine 挂载到 igo 的指定前缀，支持所有 HTTP 方法
 func Mount(app *core.App, path string, ginEngine *gin.Engine) {
 	handler := func(c *core.Context) {
@@ -106,9 +107,9 @@ func (gc *GinContext) Writer() http.ResponseWriter {
 func (gc *GinContext) Param(key string) string     { return gc.igoCtx.Param(key) }
 func (gc *GinContext) Query(key string) string     { return gc.igoCtx.Query(key) }
 func (gc *GinContext) GetHeader(key string) string { return gc.igoCtx.Request.Header.Get(key) }
-func (gc *GinContext) FullPath() string           { return gc.igoCtx.Request.URL.Path }
-func (gc *GinContext) Method() string            { return gc.igoCtx.Request.Method }
-func (gc *GinContext) Path() string             { return gc.igoCtx.Request.URL.Path }
+func (gc *GinContext) FullPath() string            { return gc.igoCtx.Request.URL.Path }
+func (gc *GinContext) Method() string              { return gc.igoCtx.Request.Method }
+func (gc *GinContext) Path() string                { return gc.igoCtx.Request.URL.Path }
 
 func (gc *GinContext) Set(key string, value interface{}) { gc.data[key] = value }
 func (gc *GinContext) Get(key string) (interface{}, bool) {
@@ -123,8 +124,8 @@ func (gc *GinContext) Next() { gc.igoCtx.Next() }
 func (gc *GinContext) Abort() {}
 
 // IsAborted 检查是否已终止
-func (gc *GinContext) IsAborted() bool   { return false }
-func (gc *GinContext) IsWritten() bool   { return gc.written }
+func (gc *GinContext) IsAborted() bool { return false }
+func (gc *GinContext) IsWritten() bool { return gc.written }
 
 // AbortWithStatusJSON 终止并返回 JSON 错误
 func (gc *GinContext) AbortWithStatusJSON(code int, obj interface{}) {

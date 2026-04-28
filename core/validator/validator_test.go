@@ -41,7 +41,7 @@ func TestValidate_Email(t *testing.T) {
 
 func TestValidate_Int(t *testing.T) {
 	tests := []struct {
-		age    int
+		age     int
 		wantErr bool
 	}{
 		{0, false},
@@ -68,7 +68,7 @@ func TestValidate_Min(t *testing.T) {
 	}
 
 	tests := []struct {
-		val    int
+		val     int
 		wantErr bool
 	}{
 		{10, false},
@@ -93,7 +93,7 @@ func TestValidate_Max(t *testing.T) {
 	}
 
 	tests := []struct {
-		val    int
+		val     int
 		wantErr bool
 	}{
 		{100, false},
@@ -118,7 +118,7 @@ func TestValidate_Len(t *testing.T) {
 	}
 
 	tests := []struct {
-		val    string
+		val     string
 		wantErr bool
 	}{
 		{"hello", false},

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	igo "github.com/igo/igo"
-	"github.com/igo/igo/core"
+	igo "github.com/leebo/igo"
+	"github.com/leebo/igo/core"
 )
 
 // =============================================================================

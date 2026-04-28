@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	errorspkg "github.com/igo/igo/core/errors"
-	routepkg "github.com/igo/igo/core/route"
-	"github.com/igo/igo/types"
+	errorspkg "github.com/leebo/igo/core/errors"
+	routepkg "github.com/leebo/igo/core/route"
+	"github.com/leebo/igo/types"
 )
 
 type aiRuntimeResponse struct {

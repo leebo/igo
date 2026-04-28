@@ -7,12 +7,12 @@
 package routes
 
 import (
-	"github.com/igo/igo"
-	"github.com/igo/igo/core"
-	"github.com/igo/igo/examples/full/handlers"
-	fullMiddleware "github.com/igo/igo/examples/full/middleware"
-	igoMiddleware "github.com/igo/igo/middleware"
-	"github.com/igo/igo/plugin/auth"
+	"github.com/leebo/igo"
+	"github.com/leebo/igo/core"
+	"github.com/leebo/igo/examples/full/handlers"
+	fullMiddleware "github.com/leebo/igo/examples/full/middleware"
+	igoMiddleware "github.com/leebo/igo/middleware"
+	"github.com/leebo/igo/plugin/auth"
 )
 
 // RegisterRoutes 注册所有路由

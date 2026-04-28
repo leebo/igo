@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	routepkg "github.com/igo/igo/core/route"
-	"github.com/igo/igo/types"
+	routepkg "github.com/leebo/igo/core/route"
+	"github.com/leebo/igo/types"
 )
 
 // Generator OpenAPI 规范生成器。

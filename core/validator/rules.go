@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/igo/igo/core/errors"
+	"github.com/leebo/igo/core/errors"
 )
 
 // ValidationRule 验证规则接口
