@@ -23,6 +23,7 @@ Commands:
   doctor [path]    Run static checks for common anti-patterns (default: .)
   ai <subcommand>  Export compact route/context/OpenAPI facts for AI tools
   dev [flags]      Watch + rebuild + restart the app, expose /_ai/dev for AI clients
+  release [flags]  Compute next semver from Conventional Commits, write CHANGELOG, tag
   help             Show this help
 
 Examples:
@@ -35,6 +36,9 @@ Examples:
   igo ai openapi ./examples/full
   igo dev                                # watch cwd, rebuild on save
   igo dev --watcher-port 18999 --dir .   # full flags
+  igo release --dry-run                  # preview next version + changelog
+  igo release --bump minor               # force bump level
+  igo release --push                     # release + push commit/tag
 `
 
 func main() {
@@ -54,6 +58,8 @@ func main() {
 		os.Exit(runAI(os.Args[2:]))
 	case "dev":
 		os.Exit(runDev(os.Args[2:]))
+	case "release":
+		os.Exit(runRelease(os.Args[2:]))
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

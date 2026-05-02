@@ -168,6 +168,33 @@ While running:
 
 Compile errors are auto-classified into: `undefined_symbol`, `missing_import`, `type_mismatch`, `syntax`, `unknown`. Each carries a one-line suggestion.
 
+## Releases
+
+`igo release` automates SemVer tagging + CHANGELOG generation from
+[Conventional Commits](https://www.conventionalcommits.org/).
+
+```bash
+go run ./cmd/igo release --dry-run    # preview the next version + entry
+go run ./cmd/igo release              # write CHANGELOG, commit, tag (no push)
+go run ./cmd/igo release --push       # also push commit + tag to origin
+go run ./cmd/igo release --bump minor # override auto-detection
+```
+
+Bump policy (while in v0.x):
+
+| Commit kind | Bump |
+|-------------|------|
+| Has `feat!:` / `fix!:` / `BREAKING CHANGE:` | **MINOR** (0.x rule, not MAJOR) |
+| Has `feat:` | PATCH |
+| Has `fix:` / `perf:` | PATCH |
+| Only `chore:` / `test:` / `ci:` / `docs:` / `style:` | refuses, requires `--bump` to force |
+
+Once the project ships v1.0.0 the tool switches to standard SemVer
+(BREAKING → MAJOR, feat → MINOR, fix → PATCH) automatically.
+
+The release commit format is `chore(release): vX.Y.Z`. Tag is annotated
+with the same content as the new CHANGELOG entry.
+
 ## AI Workflow
 
 1. Run `go run ./cmd/igo ai context . --format json`.

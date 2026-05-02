@@ -75,6 +75,21 @@ The watcher rebuilds + restarts your app on `*.go` save (excludes `_test.go`, `v
 
 Subscribe once and wait — never poll `go build` in a loop.
 
+## Releases (`igo release`)
+
+Auto-tags + writes CHANGELOG.md from Conventional Commits.
+
+```bash
+go run ./cmd/igo release --dry-run     # preview next version
+go run ./cmd/igo release               # cut local release (no push)
+go run ./cmd/igo release --push        # release and push
+go run ./cmd/igo release --bump minor  # force a level
+```
+
+While in v0.x: BREAKING → MINOR, feat/fix → PATCH. After v1.0.0: standard
+SemVer. Refuses to release on dirty tree, on duplicate tag, or when only
+chore/test/ci/docs/style commits exist (use `--bump` to force).
+
 ## Common Pattern
 
 ```go
