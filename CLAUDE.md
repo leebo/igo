@@ -109,20 +109,64 @@ go run ./cmd/igo ai examples
 Enable with:
 
 ```go
-app.RegisterAIRoutes()
+app.RegisterAIRoutes()             // dev/test only; no-op in prd
+app.RegisterAIRoutesUnsafe()       // explicit opt-in for prd
 ```
+
+`igo.Simple()` already calls `RegisterAIRoutes()` automatically when mode != prd, so most apps don't need to call it manually.
 
 Endpoints:
 
 - `GET /_ai/routes`
 - `GET /_ai/schemas`
 - `GET /_ai/errors`
-- `GET /_ai/info`
+- `GET /_ai/info` — includes `mode` ("dev"/"test"/"prd"), and in dev `dev_endpoint` + `dev_events` pointing at the watcher's `/_ai/dev` (when started via `igo dev`)
 - `GET /_ai/openapi`
 - `GET /_ai/conventions`
 - `GET /_ai/middlewares`
 
 `/_ai/middlewares` returns global middleware names, route middleware names, and registration order. Function names are inferred with `runtime.FuncForPC`.
+
+## Environment Modes
+
+igo apps run in one of three modes, selected by the `IGO_ENV` environment variable:
+
+| Mode  | When                              | Logger     | CORS default | Recovery       | `/_ai/*` auto |
+|-------|-----------------------------------|------------|--------------|----------------|---------------|
+| `dev` | unset / `dev` / `development`     | verbose    | `*`          | stack visible  | yes           |
+| `test`| `test` / `testing`                | silent     | `*`          | stack visible  | yes           |
+| `prd` | `prd` / `prod` / `production`     | structured | deny-all + WARN log | stack hidden | **no** (must call `RegisterAIRoutesUnsafe()`) |
+
+Use `core.DetectMode()`, `core.ModeDev/ModeTest/ModePrd`, or `app.Mode.IsPrd()` predicates. `app.WithMode(m)` is available for tests.
+
+When using `igo.Simple()`, middleware defaults switch automatically. When using `igo.New()`, you can compose explicitly:
+
+```go
+app := igo.New()
+app.Use(middleware.RecoveryFor(app.Mode))
+app.Use(middleware.CORSFor(app.Mode))
+app.Use(middleware.LoggerFor(app.Mode))
+```
+
+## Hot Reload (dev mode)
+
+`igo dev` is a watcher process that rebuilds + restarts your app on file save and exposes structured state for AI clients.
+
+```bash
+cd examples/dev_demo
+go run ../../cmd/igo dev                                  # default: watch cwd
+go run ../../cmd/igo dev --dir . --watcher-port 18999 --app-addr :8080
+```
+
+While running:
+
+- `GET http://127.0.0.1:18999/_ai/dev` — full state JSON: mode, build phase, last reload, compile errors, watched roots, ports
+- `GET http://127.0.0.1:18999/_ai/dev/events` — Server-Sent Events stream pushing `build:start`, `build:ok`, `build:fail`, `reload:done`. Subscribe once and wait, instead of polling.
+- The child app's `/_ai/info` exposes `dev_endpoint` and `dev_events` URLs so the AI client can discover the watcher
+
+**For AI clients**: prefer one `GET /_ai/dev` (or one `curl -N /_ai/dev/events`) over running `go build` repeatedly. The watcher already ran the build; the result is sitting in `compile_errors` (with `type`, `file:line`, `message`, `suggestion`).
+
+Compile errors are auto-classified into: `undefined_symbol`, `missing_import`, `type_mismatch`, `syntax`, `unknown`. Each carries a one-line suggestion.
 
 ## AI Workflow
 

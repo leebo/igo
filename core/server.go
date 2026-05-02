@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,11 +23,15 @@ import (
 // App 是 igo 应用的实例
 type App struct {
 	Router           *Router
+	Mode             Mode   // 运行环境 (dev/test/prd),默认从 IGO_ENV 探测
+	devWatcherURL    string // FIX #19: cached at New() instead of re-reading env per request
 	prefix           string
 	server           *http.Server
 	groupMiddlewares []MiddlewareFunc // 从父 Group 继承的中间件
 	routeRegistry    *routepkg.Registry
 	typeRegistry     *types.TypeRegistry
+	aiUnsafe         bool      // prd 下显式 opt-in 暴露 /_ai/* 时为 true
+	prdNoOpAILog     sync.Once // FIX #37: log "no-op in prd" at most once per app
 }
 
 // New 创建一个新的 igo 应用
@@ -34,9 +40,17 @@ func New() *App {
 	typeRegistry := types.NewTypeRegistry()
 	return &App{
 		Router:        NewRouterWithRegistries(routeRegistry, typeRegistry),
+		Mode:          DetectMode(),
+		devWatcherURL: os.Getenv("IGO_DEV_WATCHER"),
 		routeRegistry: routeRegistry,
 		typeRegistry:  typeRegistry,
 	}
+}
+
+// WithMode 显式设置运行模式 (主要用于测试)。返回 app 以便链式调用。
+func (a *App) WithMode(m Mode) *App {
+	a.Mode = m
+	return a
 }
 
 // Use 注册全局中间件
@@ -198,7 +212,28 @@ func (a *App) PrintRoutes() {
 //	GET /_ai/openapi      输出 OpenAPI 3.0 JSON
 //	GET /_ai/conventions  输出 AI 编码约定
 //	GET /_ai/middlewares  列出中间件注册顺序
+//
+// 在 ModePrd 下默认是 no-op (不暴露 AI 端点),需通过 RegisterAIRoutesUnsafe()
+// 显式启用。
 func (a *App) RegisterAIRoutes() {
+	if a.Mode.IsPrd() && !a.aiUnsafe {
+		// FIX #37: log only once per app even if RegisterAIRoutes is called repeatedly.
+		a.prdNoOpAILog.Do(func() {
+			log.Println("[igo] RegisterAIRoutes is a no-op in prd mode; use RegisterAIRoutesUnsafe() to opt in")
+		})
+		return
+	}
+	a.registerAIRoutes()
+}
+
+// RegisterAIRoutesUnsafe 在 prd 模式下显式启用 /_ai/* 自省端点。
+// 调用前请确保:网关层已限制访问、应用未泄漏内部信息。
+func (a *App) RegisterAIRoutesUnsafe() {
+	a.aiUnsafe = true
+	a.registerAIRoutes()
+}
+
+func (a *App) registerAIRoutes() {
 	a.Get("/_ai/routes", func(c *Context) {
 		c.JSON(http.StatusOK, a.Routes())
 	})
@@ -206,12 +241,20 @@ func (a *App) RegisterAIRoutes() {
 		c.JSON(http.StatusOK, a.middlewareSnapshot())
 	})
 	a.Get("/_ai/info", func(c *Context) {
-		c.JSON(http.StatusOK, H{
+		info := H{
 			"framework":       "igo",
+			"mode":            string(a.Mode),
 			"routeCount":      len(a.Routes()),
 			"middlewareCount": a.Router.GlobalMiddlewareCount(),
 			"schemaCount":     len(a.Schemas()),
-		})
+		}
+		// FIX #19: read the cached IGO_DEV_WATCHER URL from the App struct
+		// rather than calling os.Getenv on the per-request hot path.
+		if a.Mode.IsDev() && a.devWatcherURL != "" {
+			info["dev_endpoint"] = a.devWatcherURL + "/_ai/dev"
+			info["dev_events"] = a.devWatcherURL + "/_ai/dev/events"
+		}
+		c.JSON(http.StatusOK, info)
 	})
 	a.Get("/_ai/schemas", func(c *Context) {
 		c.JSON(http.StatusOK, a.Schemas())
@@ -315,19 +358,34 @@ func AIWorkflow() []string {
 	}
 }
 
-// Run 启动服务器，收到 SIGINT/SIGTERM 后优雅关闭（等待最多 30s）
+// Run 启动服务器，收到 SIGINT/SIGTERM 后优雅关闭（等待最多 30s）。
+//
+// 在 dev 模式下,如果环境里存在 IGO_DEV_WATCHER (由 `igo dev` 注入),
+// 会在 Listen 成功后异步上报实际监听端口给 watcher 的 /_internal/announce,
+// 这样 /_ai/dev 的 app_port 字段才能拿到真值 (例如 addr=":0" 时的随机端口)。
+// 上报是 best-effort, 失败不影响服务器启动。
 func (a *App) Run(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
 	a.server = &http.Server{
-		Addr:         addr,
 		Handler:      a.Router,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
+	if a.devWatcherURL != "" {
+		if tcpAddr, ok := ln.Addr().(*net.TCPAddr); ok {
+			go announceToWatcher(a.devWatcherURL, tcpAddr.Port)
+		}
+	}
+
 	go func() {
-		log.Printf("Server starting on %s", addr)
-		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("Server starting on %s", ln.Addr())
+		if err := a.server.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("Server error: %v", err)
 		}
 	}()
@@ -340,4 +398,21 @@ func (a *App) Run(addr string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return a.server.Shutdown(ctx)
+}
+
+// announceToWatcher posts the bound port to `igo dev`'s /_internal/announce.
+// Best-effort: short timeout, errors swallowed (the app must keep running
+// even if the watcher is gone).
+func announceToWatcher(watcherURL string, port int) {
+	url := fmt.Sprintf("%s/_internal/announce?port=%d", strings.TrimRight(watcherURL, "/"), port)
+	client := &http.Client{Timeout: 2 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	_ = resp.Body.Close()
 }

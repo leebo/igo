@@ -34,15 +34,46 @@ Short context for Codex, Claude Code, Cursor, and other AI coding agents.
 
 ## Runtime Endpoints
 
-Call `app.RegisterAIRoutes()` once during setup:
+`igo.Simple()` auto-calls `app.RegisterAIRoutes()` in dev/test mode. In prd, you must opt in with `app.RegisterAIRoutesUnsafe()`.
 
 - `GET /_ai/routes`
 - `GET /_ai/schemas`
 - `GET /_ai/errors`
-- `GET /_ai/info`
+- `GET /_ai/info` — includes `mode` and (in dev) `dev_endpoint` / `dev_events`
 - `GET /_ai/openapi`
 - `GET /_ai/conventions`
 - `GET /_ai/middlewares`
+
+## Environment Modes
+
+`IGO_ENV` selects mode at startup:
+
+- unset / `dev` / `development` → `dev` (default, AI endpoints on)
+- `test` / `testing` → `test`
+- `prd` / `prod` / `production` → `prd` (AI endpoints off, strict CORS, no stack in errors)
+
+Predicates: `app.Mode.IsDev()`, `IsTest()`, `IsPrd()`. Tests can override with `app.WithMode(core.ModeTest)`.
+
+Mode-aware middleware factories (use these instead of plain `Logger()/Recovery()/CORS()` when composing manually):
+
+- `middleware.LoggerFor(mode)` — verbose in dev, silent in test, structured in prd
+- `middleware.RecoveryFor(mode)` — stack in dev/test response, only in log in prd
+- `middleware.CORSFor(mode)` — `*` in dev/test, deny-all + WARN in prd
+
+## Hot Reload (`igo dev`)
+
+```bash
+go run ./cmd/igo dev --dir ./examples/dev_demo
+```
+
+The watcher rebuilds + restarts your app on `*.go` save (excludes `_test.go`, `vendor/`, `.git/`, `node_modules/`, dotdirs). Default watcher port `:18999`.
+
+**For AI clients: prefer the watcher endpoints over running `go build` yourself.**
+
+- `GET /_ai/dev` (watcher port) — one-shot full state: mode, build phase, last reload, compile errors with `{file, line, type, message, suggestion}`, watched roots
+- `GET /_ai/dev/events` — SSE stream: `build:start`, `build:ok`, `build:fail`, `reload:done`
+
+Subscribe once and wait — never poll `go build` in a loop.
 
 ## Common Pattern
 

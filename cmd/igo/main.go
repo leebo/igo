@@ -22,6 +22,7 @@ Usage:
 Commands:
   doctor [path]    Run static checks for common anti-patterns (default: .)
   ai <subcommand>  Export compact route/context/OpenAPI facts for AI tools
+  dev [flags]      Watch + rebuild + restart the app, expose /_ai/dev for AI clients
   help             Show this help
 
 Examples:
@@ -32,6 +33,8 @@ Examples:
   igo ai schemas ./examples/full
   igo ai errors
   igo ai openapi ./examples/full
+  igo dev                                # watch cwd, rebuild on save
+  igo dev --watcher-port 18999 --dir .   # full flags
 `
 
 func main() {
@@ -49,6 +52,8 @@ func main() {
 		os.Exit(runDoctor(path))
 	case "ai":
 		os.Exit(runAI(os.Args[2:]))
+	case "dev":
+		os.Exit(runDev(os.Args[2:]))
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

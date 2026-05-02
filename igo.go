@@ -52,13 +52,47 @@ func New() *App {
 	return core.New()
 }
 
-// Simple 创建一个带有默认中间件的 igo 应用
-// 默认中间件：Recovery、CORS、Logger
+// Mode 是当前运行模式 (dev/test/prd) 的别名
+type Mode = core.Mode
+
+// 模式常量,转发自 core 包
+const (
+	ModeDev  = core.ModeDev
+	ModeTest = core.ModeTest
+	ModePrd  = core.ModePrd
+)
+
+// Simple 创建一个带有默认中间件的 igo 应用,默认值随 IGO_ENV 变化:
+//
+//   - dev (默认): 详细 Logger、CORS *、Recovery 含 stack、自动注册 /_ai/*
+//   - test:       静默 Logger、CORS *、Recovery 含 stack、自动注册 /_ai/*
+//   - prd:        结构化 Logger、严格 CORS、Recovery 不外泄 stack、不自动注册 /_ai/*
+//
+// 在 prd 下若用户未配置 CORS,Simple 会以「拒绝跨源」启动并打 WARN 日志。
+//
+// BREAKING (since env-mode change): 在 dev/test 下 Simple 会自动调用
+// app.RegisterAIRoutes(),旧版本不会。如果你的应用已经定义了任何
+// /_ai/* 路径,会发生路由冲突或覆盖 —— 请改用 SimpleWithoutAI() 或
+// igo.New() 自行组合中间件。
 func Simple() *App {
 	app := core.New()
-	app.Use(middleware.Recovery())
-	app.Use(middleware.CORS())
-	app.Use(middleware.Logger())
+	app.Use(middleware.RecoveryFor(app.Mode))
+	app.Use(middleware.CORSFor(app.Mode))
+	app.Use(middleware.LoggerFor(app.Mode))
+	if !app.Mode.IsPrd() {
+		app.RegisterAIRoutes()
+	}
+	return app
+}
+
+// SimpleWithoutAI 等价于 Simple(),但**不**自动注册 /_ai/* 端点。
+// 适合已经自己定义 /_ai/foo 路径、或者出于安全考虑不想暴露自省接口的用户。
+// 若需要某些 AI 端点,可在返回后手动 app.RegisterAIRoutes()。
+func SimpleWithoutAI() *App {
+	app := core.New()
+	app.Use(middleware.RecoveryFor(app.Mode))
+	app.Use(middleware.CORSFor(app.Mode))
+	app.Use(middleware.LoggerFor(app.Mode))
 	return app
 }
 
