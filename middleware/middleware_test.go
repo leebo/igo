@@ -122,19 +122,3 @@ func TestRequestID(t *testing.T) {
 	}
 }
 
-func TestRateLimit(t *testing.T) {
-	app := core.New()
-
-	app.Use(RateLimit(100, 0))
-	app.Get("/limited", func(c *core.Context) {
-		c.Success(core.H{"ok": true})
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/limited", nil)
-	w := httptest.NewRecorder()
-	app.Router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
-}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -144,9 +145,9 @@ func CORSWithConfig(cfg CORSConfig) core.MiddlewareFunc {
 		headers = defaultCORSConfig.AllowHeaders
 	}
 
-	originStr := joinStrings(origins, ", ")
-	methodStr := joinStrings(methods, ", ")
-	headerStr := joinStrings(headers, ", ")
+	originStr := strings.Join(origins, ", ")
+	methodStr := strings.Join(methods, ", ")
+	headerStr := strings.Join(headers, ", ")
 
 	return func(c *core.Context) {
 		c.Header("Access-Control-Allow-Origin", originStr)
@@ -157,15 +158,6 @@ func CORSWithConfig(cfg CORSConfig) core.MiddlewareFunc {
 			c.Status(http.StatusNoContent)
 			return
 		}
-		c.Next()
-	}
-}
-
-// RateLimit 限流中间件占位（未实现实际限流逻辑）
-// 实际限流需配合 plugin/cache/redis 实现分布式限流
-func RateLimit(_ int, _ time.Duration) core.MiddlewareFunc {
-	log.Println("[igo/middleware] RateLimit: stub implementation, no actual limiting applied")
-	return func(c *core.Context) {
 		c.Next()
 	}
 }
@@ -197,15 +189,4 @@ func RequestID() core.MiddlewareFunc {
 
 func generateID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
-}
-
-func joinStrings(ss []string, sep string) string {
-	result := ""
-	for i, s := range ss {
-		if i > 0 {
-			result += sep
-		}
-		result += s
-	}
-	return result
 }
