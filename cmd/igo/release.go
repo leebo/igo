@@ -340,6 +340,9 @@ func prependChangelog(path, entry string) error {
 		return err
 	}
 	header, body := splitChangelog(string(existing))
+	// Ensure exactly one blank line between header and the first version
+	// section (otherwise the new entry sits flush against the intro text).
+	header = strings.TrimRight(header, "\n") + "\n\n"
 	merged := header + entry + "\n" + body
 	return os.WriteFile(path, []byte(merged), 0o644)
 }

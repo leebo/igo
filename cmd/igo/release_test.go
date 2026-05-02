@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -151,6 +152,36 @@ func TestRenderChangelogEntry(t *testing.T) {
 			t.Errorf("output missing %q\n--- output ---\n%s", want, out)
 		}
 	}
+}
+
+func TestPrependChangelog_HeaderBlankLine(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/CHANGELOG.md"
+	// header without trailing blank line — first release scenario
+	if err := writeFile(path, "# Changelog\n\nIntro.\n"); err != nil {
+		t.Fatal(err)
+	}
+	entry := "## [v0.1.0] - 2026-05-02\n\n### Features\n\n- thing\n"
+	if err := prependChangelog(path, entry); err != nil {
+		t.Fatal(err)
+	}
+	got := readFile(t, path)
+	want := "# Changelog\n\nIntro.\n\n## [v0.1.0] - 2026-05-02\n\n### Features\n\n- thing\n\n"
+	if got != want {
+		t.Errorf("got:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+func writeFile(p, c string) error {
+	return os.WriteFile(p, []byte(c), 0o644)
+}
+
+func readFile(t *testing.T, p string) string {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 func TestSplitChangelog(t *testing.T) {
