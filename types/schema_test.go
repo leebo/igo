@@ -129,13 +129,3 @@ func TestBuildFieldSchemaAndHelpers(t *testing.T) {
 	assert.Equal(t, "object", JSONType("Custom"))
 }
 
-func TestGlobalRegistryCompatibility(t *testing.T) {
-	old := GlobalTypeRegistry
-	GlobalTypeRegistry = NewTypeRegistry()
-	t.Cleanup(func() { GlobalTypeRegistry = old })
-
-	RegisterGlobal(&TypeSchema{Name: "GlobalUser"})
-	got := GetGlobal("GlobalUser")
-	require.NotNil(t, got)
-	assert.Equal(t, "GlobalUser", got.Name)
-}

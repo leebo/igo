@@ -15,12 +15,13 @@ import (
 	"github.com/leebo/igo/types"
 )
 
-// registerSchemaOnce 把类型注册到当前 App 的 schema 注册表（已注册则跳过反射）
+// registerSchemaOnce 把类型注册到当前 App 的 schema 注册表（已注册则跳过反射）。
 // 由 BindAndValidate / BindQueryAndValidate / BindPathAndValidate 自动调用，
-// 让 /_ai/schemas 端点能列出所有被运行时绑定的类型
+// 让 /_ai/schemas 端点能列出所有被运行时绑定的类型。
+// nil registry 直接 no-op (Router 路径总是注入非 nil registry)。
 func registerSchemaOnce(registry *types.TypeRegistry, v interface{}) {
 	if registry == nil {
-		registry = types.GlobalTypeRegistry
+		return
 	}
 	t := reflect.TypeOf(v)
 	if t == nil {

@@ -51,11 +51,6 @@ type TypeRegistry struct {
 	types map[string]*TypeSchema
 }
 
-// GlobalTypeRegistry 是兼容旧 RegisterSchema[T] 用法的全局类型注册表。
-//
-// 新代码推荐使用 App 自己的 schema registry，避免多 App/测试相互污染。
-var GlobalTypeRegistry = NewTypeRegistry()
-
 // NewTypeRegistry 创建新的类型注册表。
 func NewTypeRegistry() *TypeRegistry {
 	return &TypeRegistry{types: make(map[string]*TypeSchema)}
@@ -279,16 +274,6 @@ func JSONType(goType string) string {
 	default:
 		return "object"
 	}
-}
-
-// RegisterGlobal 注册类型到兼容全局注册表。
-func RegisterGlobal(schema *TypeSchema) {
-	GlobalTypeRegistry.RegisterType(schema)
-}
-
-// GetGlobal 获取兼容全局注册的类型。
-func GetGlobal(name string) *TypeSchema {
-	return GlobalTypeRegistry.GetType(name)
 }
 
 func cloneTypeSchema(schema *TypeSchema) TypeSchema {

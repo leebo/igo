@@ -135,11 +135,3 @@ func BindPathAndValidate[T any](c *Context) (*T, bool) {
 func RegisterAppSchema[T any](app *App) {
 	core.RegisterAppSchema[T](app)
 }
-
-// RegisterSchema 把类型 T 显式注册到兼容全局 schema 注册表。
-//
-// Deprecated: use app.RegisterSchema(UserResponse{}) or RegisterAppSchema[T](app)
-// so schemas stay isolated per App.
-func RegisterSchema[T any]() {
-	core.RegisterSchema[T]()
-}

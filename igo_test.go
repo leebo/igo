@@ -74,7 +74,8 @@ func TestTopLevelConstructorsAndHelpers(t *testing.T) {
 	assert.Equal(t, 3, simple.Router.GlobalMiddlewareCount())
 }
 
-func TestRegisterSchemaGlobalCompatibility(t *testing.T) {
-	RegisterSchema[igoTestResponse]()
-	assert.NotNil(t, New().Schemas())
+func TestRegisterAppSchema(t *testing.T) {
+	app := New()
+	RegisterAppSchema[igoTestResponse](app)
+	assert.NotEmpty(t, app.Schemas())
 }

@@ -155,21 +155,6 @@ func (a *App) Routes() []*routepkg.RouteConfig {
 // Schemas 返回当前应用显式注册和运行时绑定过的类型 Schema。
 func (a *App) Schemas() []*types.TypeSchema {
 	appSchemas := a.typeRegistry.ListTypes()
-	legacySchemas := types.GlobalTypeRegistry.ListTypes()
-	if len(legacySchemas) == 0 {
-		return appSchemas
-	}
-
-	seen := make(map[string]bool, len(appSchemas))
-	for _, schema := range appSchemas {
-		seen[schema.Name] = true
-	}
-	for _, schema := range legacySchemas {
-		if !seen[schema.Name] {
-			appSchemas = append(appSchemas, schema)
-			seen[schema.Name] = true
-		}
-	}
 	sort.Slice(appSchemas, func(i, j int) bool {
 		if appSchemas[i].Package != appSchemas[j].Package {
 			return appSchemas[i].Package < appSchemas[j].Package
@@ -284,15 +269,6 @@ func RegisterAppSchema[T any](app *App) {
 	}
 	var zero T
 	app.RegisterSchema(&zero)
-}
-
-// RegisterSchema 把类型 T 显式注册到兼容全局 schema 注册表。
-//
-// Deprecated: use app.RegisterSchema(UserResponse{}) or RegisterAppSchema[T](app)
-// so schemas stay isolated per App.
-func RegisterSchema[T any]() {
-	var zero T
-	registerSchemaOnce(types.GlobalTypeRegistry, &zero)
 }
 
 func (a *App) middlewareSnapshot() H {
