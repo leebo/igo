@@ -6,6 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestContext_Query(t *testing.T) {
@@ -21,12 +24,10 @@ func TestContext_Query(t *testing.T) {
 	app.Router.ServeHTTP(w, req)
 
 	var resp H
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	data := resp["data"].(map[string]interface{})
-	if data["query"] != "hello" {
-		t.Errorf("expected query 'hello', got '%v'", data["query"])
-	}
+	assert.Equal(t, "hello", data["query"])
 }
 
 func TestContext_QueryInt(t *testing.T) {
@@ -55,15 +56,11 @@ func TestContext_QueryInt(t *testing.T) {
 			app.Router.ServeHTTP(w, req)
 
 			var resp H
-			json.Unmarshal(w.Body.Bytes(), &resp)
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 			data := resp["data"].(map[string]interface{})
-			if int(data["page"].(float64)) != tt.wantPage {
-				t.Errorf("expected page %d, got %v", tt.wantPage, data["page"])
-			}
-			if int(data["size"].(float64)) != tt.wantSize {
-				t.Errorf("expected size %d, got %v", tt.wantSize, data["size"])
-			}
+			assert.Equal(t, tt.wantPage, int(data["page"].(float64)))
+			assert.Equal(t, tt.wantSize, int(data["size"].(float64)))
 		})
 	}
 }
@@ -82,22 +79,18 @@ func TestContext_QueryDefault(t *testing.T) {
 	app.Router.ServeHTTP(w, req)
 
 	var resp H
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	data := resp["data"].(map[string]interface{})
-	if data["name"] != "default" {
-		t.Errorf("expected 'default', got '%v'", data["name"])
-	}
+	assert.Equal(t, "default", data["name"])
 
 	// Test with value
 	req = httptest.NewRequest(http.MethodGet, "/test?name=custom", nil)
 	w = httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	data = resp["data"].(map[string]interface{})
-	if data["name"] != "custom" {
-		t.Errorf("expected 'custom', got '%v'", data["name"])
-	}
+	assert.Equal(t, "custom", data["name"])
 }
 
 func TestContext_Param(t *testing.T) {
@@ -114,15 +107,11 @@ func TestContext_Param(t *testing.T) {
 	app.Router.ServeHTTP(w, req)
 
 	var resp H
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	data := resp["data"].(map[string]interface{})
-	if data["userId"] != "123" {
-		t.Errorf("expected id '123', got '%v'", data["userId"])
-	}
-	if data["postId"] != "456" {
-		t.Errorf("expected postId '456', got '%v'", data["postId"])
-	}
+	assert.Equal(t, "123", data["userId"])
+	assert.Equal(t, "456", data["postId"])
 }
 
 func TestContext_BindJSON(t *testing.T) {
@@ -147,15 +136,11 @@ func TestContext_BindJSON(t *testing.T) {
 	app.Router.ServeHTTP(w, req)
 
 	var resp H
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	data := resp["data"].(map[string]interface{})
-	if data["name"] != "test" {
-		t.Errorf("expected name 'test', got '%v'", data["name"])
-	}
-	if int(data["value"].(float64)) != 42 {
-		t.Errorf("expected value 42, got %v", data["value"])
-	}
+	assert.Equal(t, "test", data["name"])
+	assert.Equal(t, 42, int(data["value"].(float64)))
 }
 
 func TestContext_BindJSON_Invalid(t *testing.T) {
@@ -178,9 +163,7 @@ func TestContext_BindJSON_Invalid(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestContext_BindQuery(t *testing.T) {
@@ -203,15 +186,11 @@ func TestContext_BindQuery(t *testing.T) {
 	app.Router.ServeHTTP(w, req)
 
 	var resp H
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	data := resp["data"].(map[string]interface{})
-	if data["q"] != "test" {
-		t.Errorf("expected q 'test', got '%v'", data["q"])
-	}
-	if int(data["limit"].(float64)) != 10 {
-		t.Errorf("expected limit 10, got %v", data["limit"])
-	}
+	assert.Equal(t, "test", data["q"])
+	assert.Equal(t, 10, int(data["limit"].(float64)))
 }
 
 func TestContext_Success(t *testing.T) {
@@ -225,16 +204,12 @@ func TestContext_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp H
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-	if resp["data"] == nil {
-		t.Error("expected 'data' field in response")
-	}
+	assert.NotNil(t, resp["data"])
 }
 
 func TestContext_Created(t *testing.T) {
@@ -248,9 +223,7 @@ func TestContext_Created(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusCreated {
-		t.Errorf("expected status 201, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusCreated, w.Code)
 }
 
 func TestContext_NoContent(t *testing.T) {
@@ -264,9 +237,7 @@ func TestContext_NoContent(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNoContent {
-		t.Errorf("expected status 204, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusNoContent, w.Code)
 }
 
 func TestContext_BadRequest(t *testing.T) {
@@ -280,16 +251,12 @@ func TestContext_BadRequest(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var resp H
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	errObj := resp["error"].(map[string]interface{})
-	if errObj["code"] != "BAD_REQUEST" {
-		t.Errorf("expected code 'BAD_REQUEST', got '%v'", errObj["code"])
-	}
+	assert.Equal(t, "BAD_REQUEST", errObj["code"])
 }
 
 func TestContext_NotFound(t *testing.T) {
@@ -303,9 +270,7 @@ func TestContext_NotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected status 404, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestContext_Unauthorized(t *testing.T) {
@@ -319,9 +284,7 @@ func TestContext_Unauthorized(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected status 401, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestContext_Forbidden(t *testing.T) {
@@ -335,9 +298,7 @@ func TestContext_Forbidden(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected status 403, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestContext_InternalError(t *testing.T) {
@@ -351,9 +312,7 @@ func TestContext_InternalError(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected status 500, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
 func TestContext_ValidationError(t *testing.T) {
@@ -367,9 +326,7 @@ func TestContext_ValidationError(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected status 422, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 }
 
 func TestContext_Header(t *testing.T) {
@@ -385,12 +342,8 @@ func TestContext_Header(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Header().Get("X-Custom") != "value" {
-		t.Errorf("expected header 'value', got '%s'", w.Header().Get("X-Custom"))
-	}
-	if w.Header().Get("X-Another") != "another" {
-		t.Errorf("expected header 'another', got '%s'", w.Header().Get("X-Another"))
-	}
+	assert.Equal(t, "value", w.Header().Get("X-Custom"))
+	assert.Equal(t, "another", w.Header().Get("X-Another"))
 }
 
 func TestContext_Status(t *testing.T) {
@@ -404,9 +357,7 @@ func TestContext_Status(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusAccepted {
-		t.Errorf("expected status 202, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusAccepted, w.Code)
 }
 
 func TestContext_JSON(t *testing.T) {
@@ -420,9 +371,7 @@ func TestContext_JSON(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Header().Get("Content-Type") != "application/json" {
-		t.Errorf("expected 'application/json', got '%s'", w.Header().Get("Content-Type"))
-	}
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 }
 
 func TestContext_Error(t *testing.T) {
@@ -436,17 +385,11 @@ func TestContext_Error(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadGateway {
-		t.Errorf("expected status 502, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusBadGateway, w.Code)
 
 	var resp H
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	errObj := resp["error"].(map[string]interface{})
-	if errObj["code"] != "BAD_GATEWAY" {
-		t.Errorf("expected code 'BAD_GATEWAY', got '%v'", errObj["code"])
-	}
-	if errObj["message"] != "upstream error" {
-		t.Errorf("expected message 'upstream error', got '%v'", errObj["message"])
-	}
+	assert.Equal(t, "BAD_GATEWAY", errObj["code"])
+	assert.Equal(t, "upstream error", errObj["message"])
 }

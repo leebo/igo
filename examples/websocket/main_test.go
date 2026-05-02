@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // newWSTestServer 启动一个 httptest.Server 并返回 ws:// 形式的 URL
@@ -29,9 +31,7 @@ func newWSTestServer(t *testing.T) (*httptest.Server, *Hub, string) {
 func dialWS(t *testing.T, url string) *websocket.Conn {
 	t.Helper()
 	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		t.Fatalf("ws dial: %v", err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return conn
 }
@@ -53,17 +53,11 @@ func TestWebSocket_EchoToSender(t *testing.T) {
 	conn := dialWS(t, wsURL)
 
 	want := []byte("hello self")
-	if err := conn.WriteMessage(websocket.TextMessage, want); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	require.NoError(t, conn.WriteMessage(websocket.TextMessage, want))
 
 	got, err := readOnceWithTimeout(t, conn, 2*time.Second)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if string(got) != string(want) {
-		t.Errorf("got %q, want %q", got, want)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
 }
 
 // =============================================================================
@@ -77,22 +71,14 @@ func TestWebSocket_Broadcast(t *testing.T) {
 	connB := dialWS(t, wsURL)
 
 	// 等待 hub 把两个 client 都注册
-	if err := waitForClients(hub, 2, 1*time.Second); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, waitForClients(hub, 2, 1*time.Second))
 
 	want := []byte("hi from A")
-	if err := connA.WriteMessage(websocket.TextMessage, want); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	require.NoError(t, connA.WriteMessage(websocket.TextMessage, want))
 
 	got, err := readOnceWithTimeout(t, connB, 2*time.Second)
-	if err != nil {
-		t.Fatalf("B read: %v", err)
-	}
-	if string(got) != string(want) {
-		t.Errorf("B got %q, want %q", got, want)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
 }
 
 // =============================================================================
@@ -103,15 +89,11 @@ func TestWebSocket_ClientLeaveCleansHub(t *testing.T) {
 	_, hub, wsURL := newWSTestServer(t)
 	conn := dialWS(t, wsURL)
 
-	if err := waitForClients(hub, 1, 1*time.Second); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, waitForClients(hub, 1, 1*time.Second))
 
 	conn.Close()
 
-	if err := waitForClients(hub, 0, 2*time.Second); err != nil {
-		t.Errorf("hub should clean up after client leaves: %v", err)
-	}
+	assert.NoError(t, waitForClients(hub, 0, 2*time.Second))
 }
 
 // =============================================================================
@@ -122,27 +104,17 @@ func TestStatsEndpoint(t *testing.T) {
 	srv, hub, wsURL := newWSTestServer(t)
 
 	// 初始 0
-	if got := getStats(t, srv); got != 0 {
-		t.Errorf("initial clients = %d, want 0", got)
-	}
+	assert.Equal(t, 0, getStats(t, srv))
 
 	// 连一个，stats=1
 	dialWS(t, wsURL)
-	if err := waitForClients(hub, 1, 1*time.Second); err != nil {
-		t.Fatal(err)
-	}
-	if got := getStats(t, srv); got != 1 {
-		t.Errorf("clients after 1 dial = %d, want 1", got)
-	}
+	require.NoError(t, waitForClients(hub, 1, 1*time.Second))
+	assert.Equal(t, 1, getStats(t, srv))
 
 	// 再连一个
 	dialWS(t, wsURL)
-	if err := waitForClients(hub, 2, 1*time.Second); err != nil {
-		t.Fatal(err)
-	}
-	if got := getStats(t, srv); got != 2 {
-		t.Errorf("clients after 2 dials = %d, want 2", got)
-	}
+	require.NoError(t, waitForClients(hub, 2, 1*time.Second))
+	assert.Equal(t, 2, getStats(t, srv))
 }
 
 // =============================================================================
@@ -191,18 +163,15 @@ func itoa(n int) string {
 func getStats(t *testing.T, srv *httptest.Server) int {
 	t.Helper()
 	resp, err := http.Get(srv.URL + "/stats")
-	if err != nil {
-		t.Fatalf("GET /stats: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
 	var w struct {
 		Data struct {
 			Clients int `json:"clients"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &w); err != nil {
-		t.Fatalf("decode: %v\nbody=%s", err, body)
-	}
+	require.NoError(t, json.Unmarshal(body, &w), string(body))
 	return w.Data.Clients
 }

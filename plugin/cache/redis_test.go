@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // MockRedis for testing without actual Redis
@@ -18,9 +21,7 @@ func TestConfig(t *testing.T) {
 		DB:       0,
 	}
 
-	if cfg.Addr != "localhost:6379" {
-		t.Errorf("expected 'localhost:6379', got '%s'", cfg.Addr)
-	}
+	assert.Equal(t, "localhost:6379", cfg.Addr)
 }
 
 func TestNew_ConnectionFailure(t *testing.T) {
@@ -43,9 +44,7 @@ func TestCacheItem_Generic(t *testing.T) {
 		ExpiredAt: time.Now().Add(time.Hour),
 	}
 
-	if item.Value != "test" {
-		t.Errorf("expected 'test', got '%s'", item.Value)
-	}
+	assert.Equal(t, "test", item.Value)
 }
 
 func TestCacheService_Interface(t *testing.T) {
@@ -82,33 +81,23 @@ func TestClient_SetGet_Delete(t *testing.T) {
 
 	// Set (strings are JSON encoded)
 	err := client.Set(ctx, key, value)
-	if err != nil {
-		t.Fatalf("Set() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	// Get (returns JSON encoded value)
 	got, err := client.Get(ctx, key)
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	// Strings are stored with JSON encoding, so we expect quotes
 	expected := `"` + value + `"`
-	if got != expected {
-		t.Errorf("expected '%s', got '%s'", expected, got)
-	}
+	assert.Equal(t, expected, got)
 
 	// Delete
 	err = client.Delete(ctx, key)
-	if err != nil {
-		t.Fatalf("Delete() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	// Verify deleted
 	_, err = client.Get(ctx, key)
-	if err == nil {
-		t.Error("expected error for deleted key")
-	}
+	assert.Error(t, err)
 }
 
 func TestClient_SetJSON(t *testing.T) {
@@ -133,24 +122,14 @@ func TestClient_SetJSON(t *testing.T) {
 
 	// Set JSON
 	err := client.SetJSON(ctx, key, original)
-	if err != nil {
-		t.Fatalf("SetJSON() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	// Get JSON
 	var loaded Data
 	err = client.GetJSON(ctx, key, &loaded)
-	if err != nil {
-		t.Fatalf("GetJSON() error = %v", err)
-	}
+	require.NoError(t, err)
 
-	if loaded.Name != original.Name {
-		t.Errorf("expected name '%s', got '%s'", original.Name, loaded.Name)
-	}
-
-	if loaded.Age != original.Age {
-		t.Errorf("expected age %d, got %d", original.Age, loaded.Age)
-	}
+	assert.Equal(t, original, loaded)
 
 	client.Delete(ctx, key)
 }
@@ -170,24 +149,16 @@ func TestClient_Exists(t *testing.T) {
 
 	// Should not exist
 	exists, err := client.Exists(ctx, key)
-	if err != nil {
-		t.Fatalf("Exists() error = %v", err)
-	}
-	if exists {
-		t.Error("expected key to not exist")
-	}
+	require.NoError(t, err)
+	assert.False(t, exists)
 
 	// Set
 	client.Set(ctx, key, "value")
 
 	// Should exist now
 	exists, err = client.Exists(ctx, key)
-	if err != nil {
-		t.Fatalf("Exists() error = %v", err)
-	}
-	if !exists {
-		t.Error("expected key to exist")
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 
 	client.Delete(ctx, key)
 }
@@ -208,18 +179,13 @@ func TestClient_Expire(t *testing.T) {
 	client.Set(ctx, key, "value")
 
 	err := client.Expire(ctx, key, time.Second)
-	if err != nil {
-		t.Fatalf("Expire() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	ttl, err := client.TTL(ctx, key)
-	if err != nil {
-		t.Fatalf("TTL() error = %v", err)
-	}
+	require.NoError(t, err)
 
-	if ttl <= 0 || ttl > time.Second {
-		t.Errorf("expected TTL around 1 second, got %v", ttl)
-	}
+	assert.Greater(t, ttl, time.Duration(0))
+	assert.LessOrEqual(t, ttl, time.Second)
 
 	client.Delete(ctx, key)
 }
@@ -242,21 +208,13 @@ func TestClient_Incr(t *testing.T) {
 
 	// Incr
 	val, err := client.Incr(ctx, key)
-	if err != nil {
-		t.Fatalf("Incr() error = %v", err)
-	}
-	if val != 1 {
-		t.Errorf("expected 1, got %d", val)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), val)
 
 	// Incr again
 	val, err = client.Incr(ctx, key)
-	if err != nil {
-		t.Fatalf("Incr() error = %v", err)
-	}
-	if val != 2 {
-		t.Errorf("expected 2, got %d", val)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), val)
 
 	client.Delete(ctx, key)
 }
@@ -283,27 +241,22 @@ func TestClient_Decr(t *testing.T) {
 	client.Incr(ctx, key) // value = 3
 
 	val, err := client.Decr(ctx, key)
-	if err != nil {
-		t.Fatalf("Decr() error = %v", err)
-	}
-	if val != 2 {
-		t.Errorf("expected 2, got %d", val)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), val)
 
 	client.Delete(ctx, key)
 }
 
 func TestClient_MustNew(t *testing.T) {
-	// Without Redis, this should panic
-	defer func() {
-		if r := recover(); r != nil {
-			// Expected panic
-		}
-	}()
+	cfg := Config{Addr: "localhost:6379", Password: "", DB: 0}
+	probe, err := New(cfg)
+	if err == nil {
+		require.NoError(t, probe.Close())
+		client := MustNew(cfg)
+		assert.NotNil(t, client)
+		require.NoError(t, client.Close())
+		return
+	}
 
-	MustNew(Config{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
+	assert.Panics(t, func() { MustNew(cfg) })
 }

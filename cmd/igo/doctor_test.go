@@ -4,17 +4,17 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func parseSource(t *testing.T, src string) (*token.FileSet, *ast.File) {
 	t.Helper()
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	require.NoError(t, err)
 	return fset, f
 }
 
@@ -29,15 +29,9 @@ func h(c *Context) {
 func doStuff() (int, error) { return 0, nil }`
 	fset, f := parseSource(t, src)
 	diags := checkErrShouldWrap(fset, f)
-	if len(diags) != 1 {
-		t.Fatalf("expected 1 diagnostic, got %d: %+v", len(diags), diags)
-	}
-	if diags[0].Rule != "should-wrap" {
-		t.Errorf("rule = %s, want should-wrap", diags[0].Rule)
-	}
-	if !strings.Contains(diags[0].Message, "InternalErrorWrap") {
-		t.Errorf("message missing replacement hint: %s", diags[0].Message)
-	}
+	require.Len(t, diags, 1)
+	assert.Equal(t, "should-wrap", diags[0].Rule)
+	assert.Contains(t, diags[0].Message, "InternalErrorWrap")
 }
 
 func TestCheckErrShouldWrap_IgnoresRecoverPattern(t *testing.T) {
@@ -54,9 +48,7 @@ func setup() {
 func doSomething() {}`
 	fset, f := parseSource(t, src)
 	diags := checkErrShouldWrap(fset, f)
-	if len(diags) != 0 {
-		t.Errorf("recover() pattern should not trigger should-wrap, got %d: %+v", len(diags), diags)
-	}
+	assert.Empty(t, diags)
 }
 
 func TestCheckErrShouldWrap_IgnoresOutsideIfBlock(t *testing.T) {
@@ -66,9 +58,7 @@ func h(c *Context) {
 }`
 	fset, f := parseSource(t, src)
 	diags := checkErrShouldWrap(fset, f)
-	if len(diags) != 0 {
-		t.Errorf("expected 0 diagnostics, got %d", len(diags))
-	}
+	assert.Empty(t, diags)
 }
 
 func TestCheckGroupInternalUse_Triggers(t *testing.T) {
@@ -81,12 +71,8 @@ func setup(app *App) {
 }`
 	fset, f := parseSource(t, src)
 	diags := checkGroupInternalUse(fset, f)
-	if len(diags) != 1 {
-		t.Fatalf("expected 1 diagnostic, got %d: %+v", len(diags), diags)
-	}
-	if diags[0].Rule != "group-use-leak" {
-		t.Errorf("rule = %s, want group-use-leak", diags[0].Rule)
-	}
+	require.Len(t, diags, 1)
+	assert.Equal(t, "group-use-leak", diags[0].Rule)
 }
 
 func TestCheckGroupInternalUse_OK(t *testing.T) {
@@ -98,9 +84,7 @@ func setup(app *App) {
 }`
 	fset, f := parseSource(t, src)
 	diags := checkGroupInternalUse(fset, f)
-	if len(diags) != 0 {
-		t.Errorf("expected 0 diagnostics, got %d", len(diags))
-	}
+	assert.Empty(t, diags)
 }
 
 func TestCheckAppUseMissingNext_Triggers(t *testing.T) {
@@ -112,12 +96,8 @@ func setup(app *App) {
 }`
 	fset, f := parseSource(t, src)
 	diags := checkAppUseMissingNext(fset, f)
-	if len(diags) != 1 {
-		t.Fatalf("expected 1 diagnostic, got %d: %+v", len(diags), diags)
-	}
-	if diags[0].Rule != "middleware-missing-next" {
-		t.Errorf("rule = %s, want middleware-missing-next", diags[0].Rule)
-	}
+	require.Len(t, diags, 1)
+	assert.Equal(t, "middleware-missing-next", diags[0].Rule)
 }
 
 func TestCheckAppUseMissingNext_HasNext(t *testing.T) {
@@ -130,9 +110,7 @@ func setup(app *App) {
 }`
 	fset, f := parseSource(t, src)
 	diags := checkAppUseMissingNext(fset, f)
-	if len(diags) != 0 {
-		t.Errorf("expected 0 diagnostics, got %d", len(diags))
-	}
+	assert.Empty(t, diags)
 }
 
 func TestCheckAppUseMissingNext_ShortCircuits(t *testing.T) {
@@ -148,9 +126,7 @@ func setup(app *App) {
 }`
 	fset, f := parseSource(t, src)
 	diags := checkAppUseMissingNext(fset, f)
-	if len(diags) != 0 {
-		t.Errorf("expected 0 diagnostics, got %d", len(diags))
-	}
+	assert.Empty(t, diags)
 }
 
 func TestCheckMissingReturnAfterErrorResponse_Triggers(t *testing.T) {
@@ -165,12 +141,8 @@ func invalid() bool { return true }
 func doWork() {}`
 	fset, f := parseSource(t, src)
 	diags := checkMissingReturnAfterErrorResponse(fset, f)
-	if len(diags) != 1 {
-		t.Fatalf("expected 1 diagnostic, got %d: %+v", len(diags), diags)
-	}
-	if diags[0].Rule != "missing-return-after-error" {
-		t.Errorf("rule = %s, want missing-return-after-error", diags[0].Rule)
-	}
+	require.Len(t, diags, 1)
+	assert.Equal(t, "missing-return-after-error", diags[0].Rule)
 }
 
 func TestCheckMissingReturnAfterErrorResponse_OK(t *testing.T) {
@@ -184,9 +156,7 @@ func h(c *Context) {
 func invalid() bool { return true }`
 	fset, f := parseSource(t, src)
 	diags := checkMissingReturnAfterErrorResponse(fset, f)
-	if len(diags) != 0 {
-		t.Errorf("expected 0 diagnostics, got %d", len(diags))
-	}
+	assert.Empty(t, diags)
 }
 
 func TestCheckDoubleSuccessResponse_Triggers(t *testing.T) {
@@ -197,12 +167,8 @@ func h(c *Context) {
 }`
 	fset, f := parseSource(t, src)
 	diags := checkDoubleSuccessResponse(fset, f)
-	if len(diags) != 1 {
-		t.Fatalf("expected 1 diagnostic, got %d: %+v", len(diags), diags)
-	}
-	if diags[0].Rule != "multiple-success-responses" {
-		t.Errorf("rule = %s, want multiple-success-responses", diags[0].Rule)
-	}
+	require.Len(t, diags, 1)
+	assert.Equal(t, "multiple-success-responses", diags[0].Rule)
 }
 
 func TestCheckJSONErrorResponse_Triggers(t *testing.T) {
@@ -217,10 +183,6 @@ func h(c *Context) {
 func doStuff() (int, error) { return 0, nil }`
 	fset, f := parseSource(t, src)
 	diags := checkJSONErrorResponse(fset, f)
-	if len(diags) != 1 {
-		t.Fatalf("expected 1 diagnostic, got %d: %+v", len(diags), diags)
-	}
-	if diags[0].Rule != "json-error" {
-		t.Errorf("rule = %s, want json-error", diags[0].Rule)
-	}
+	require.Len(t, diags, 1)
+	assert.Equal(t, "json-error", diags[0].Rule)
 }

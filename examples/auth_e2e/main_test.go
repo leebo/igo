@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	igo "github.com/leebo/igo"
 	"github.com/leebo/igo/plugin/auth"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -31,7 +32,8 @@ func newTestApp(t *testing.T) (*igo.App, *userStore, *auth.Client) {
 // post 发起一次 JSON POST 请求
 func post(t *testing.T, app *igo.App, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
-	raw, _ := json.Marshal(body)
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -57,12 +59,8 @@ func decodeData(t *testing.T, w *httptest.ResponseRecorder, dst any) {
 	var wrapper struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &wrapper); err != nil {
-		t.Fatalf("decode wrapper: %v\nbody=%s", err, w.Body.String())
-	}
-	if err := json.Unmarshal(wrapper.Data, dst); err != nil {
-		t.Fatalf("decode data: %v\nraw=%s", err, wrapper.Data)
-	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &wrapper), w.Body.String())
+	require.NoError(t, json.Unmarshal(wrapper.Data, dst), string(wrapper.Data))
 }
 
 // =============================================================================
@@ -75,18 +73,14 @@ func TestRegister_Success(t *testing.T) {
 		"username": "alice",
 		"password": "secret123",
 	})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want 201; body=%s", w.Code, w.Body.String())
-	}
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 
 	var resp struct {
 		ID       int64  `json:"id"`
 		Username string `json:"username"`
 	}
 	decodeData(t, w, &resp)
-	if resp.Username != "alice" {
-		t.Errorf("username = %q, want alice", resp.Username)
-	}
+	assert.Equal(t, "alice", resp.Username)
 }
 
 func TestRegister_DuplicateUsername(t *testing.T) {
@@ -96,12 +90,8 @@ func TestRegister_DuplicateUsername(t *testing.T) {
 		"username": "alice",
 		"password": "another-pass",
 	})
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", w.Code)
-	}
-	if !strings.Contains(w.Body.String(), "already exists") {
-		t.Errorf("body should mention duplicate: %s", w.Body.String())
-	}
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "already exists")
 }
 
 func TestRegister_PasswordTooShort(t *testing.T) {
@@ -110,13 +100,9 @@ func TestRegister_PasswordTooShort(t *testing.T) {
 		"username": "bob",
 		"password": "x", // 远低于 min:8
 	})
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("status = %d, want 422; body=%s", w.Code, w.Body.String())
-	}
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
 	// 应当返回结构化错误，带 field/rule
-	if !strings.Contains(w.Body.String(), `"field":"Password"`) {
-		t.Errorf("body should include field=Password: %s", w.Body.String())
-	}
+	assert.Contains(t, w.Body.String(), `"field":"Password"`)
 }
 
 // =============================================================================
@@ -131,18 +117,13 @@ func TestLogin_Success(t *testing.T) {
 		"username": "alice",
 		"password": "secret123",
 	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
-	}
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	var tokens auth.TokenResponse
 	decodeData(t, w, &tokens)
-	if tokens.AccessToken == "" || tokens.RefreshToken == "" {
-		t.Errorf("expected non-empty tokens, got %+v", tokens)
-	}
-	if tokens.TokenType != "Bearer" {
-		t.Errorf("token_type = %q, want Bearer", tokens.TokenType)
-	}
+	assert.NotEmpty(t, tokens.AccessToken)
+	assert.NotEmpty(t, tokens.RefreshToken)
+	assert.Equal(t, "Bearer", tokens.TokenType)
 }
 
 func TestLogin_WrongPassword(t *testing.T) {
@@ -153,13 +134,9 @@ func TestLogin_WrongPassword(t *testing.T) {
 		"username": "alice",
 		"password": "wrong-password",
 	})
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", w.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	// 关键：响应消息不应泄露 "用户名是否存在"
-	if !strings.Contains(w.Body.String(), "invalid credentials") {
-		t.Errorf("body should generic-error: %s", w.Body.String())
-	}
+	assert.Contains(t, w.Body.String(), "invalid credentials")
 }
 
 func TestLogin_NonexistentUser(t *testing.T) {
@@ -168,9 +145,7 @@ func TestLogin_NonexistentUser(t *testing.T) {
 		"username": "ghost",
 		"password": "any",
 	})
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", w.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 // =============================================================================
@@ -191,9 +166,7 @@ func TestProtectedRoute_WithValidToken(t *testing.T) {
 
 	// 2) 用 token 访问 /me
 	w = getWithToken(t, app, "/me", tokens.AccessToken)
-	if w.Code != http.StatusOK {
-		t.Fatalf("/me status = %d, body=%s", w.Code, w.Body.String())
-	}
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	var me struct {
 		UserID   int64  `json:"user_id"`
@@ -201,23 +174,15 @@ func TestProtectedRoute_WithValidToken(t *testing.T) {
 		Role     string `json:"role"`
 	}
 	decodeData(t, w, &me)
-	if me.Username != "alice" {
-		t.Errorf("username = %q, want alice", me.Username)
-	}
-	if me.Role != "user" {
-		t.Errorf("role = %q, want user", me.Role)
-	}
+	assert.Equal(t, "alice", me.Username)
+	assert.Equal(t, "user", me.Role)
 }
 
 func TestProtectedRoute_NoToken(t *testing.T) {
 	app, _, _ := newTestApp(t)
 	w := getWithToken(t, app, "/me", "")
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", w.Code)
-	}
-	if !strings.Contains(w.Body.String(), "Authorization header required") {
-		t.Errorf("body should explain missing header: %s", w.Body.String())
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Body.String(), "Authorization header required")
 }
 
 func TestProtectedRoute_BadFormat(t *testing.T) {
@@ -228,20 +193,14 @@ func TestProtectedRoute_BadFormat(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", w.Code)
-	}
-	if !strings.Contains(w.Body.String(), "Bearer") {
-		t.Errorf("body should mention Bearer format: %s", w.Body.String())
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Body.String(), "Bearer")
 }
 
 func TestProtectedRoute_InvalidToken(t *testing.T) {
 	app, _, _ := newTestApp(t)
 	w := getWithToken(t, app, "/me", "garbage.token.value")
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", w.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 // =============================================================================
@@ -263,20 +222,14 @@ func TestRefresh_Success(t *testing.T) {
 	w = post(t, app, "/auth/refresh", map[string]string{
 		"refresh_token": tokens.RefreshToken,
 	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("refresh status = %d, body=%s", w.Code, w.Body.String())
-	}
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	var newTokens auth.TokenResponse
 	decodeData(t, w, &newTokens)
-	if newTokens.AccessToken == "" {
-		t.Error("expected non-empty access_token after refresh")
-	}
+	assert.NotEmpty(t, newTokens.AccessToken)
 	// 新的 access_token 应该能用
 	w = getWithToken(t, app, "/me", newTokens.AccessToken)
-	if w.Code != http.StatusOK {
-		t.Errorf("new access_token doesn't work; status=%d body=%s", w.Code, w.Body.String())
-	}
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 func TestRefresh_InvalidToken(t *testing.T) {
@@ -284,9 +237,7 @@ func TestRefresh_InvalidToken(t *testing.T) {
 	w := post(t, app, "/auth/refresh", map[string]string{
 		"refresh_token": "not-a-real-token",
 	})
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401; body=%s", w.Code, w.Body.String())
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code, w.Body.String())
 }
 
 func TestRefresh_AccessTokenIsRejected(t *testing.T) {
@@ -303,7 +254,5 @@ func TestRefresh_AccessTokenIsRejected(t *testing.T) {
 	w = post(t, app, "/auth/refresh", map[string]string{
 		"refresh_token": tokens.AccessToken, // 故意用 access token
 	})
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401 (access token must not be valid as refresh)", w.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }

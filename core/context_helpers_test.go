@@ -2,12 +2,16 @@ package core
 
 import (
 	"encoding/json"
+	stderrors "errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type bindQueryTestRequest struct {
@@ -43,12 +47,8 @@ func TestBindQueryAndValidate(t *testing.T) {
 
 			w := httptest.NewRecorder()
 			app.Router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tt.url, nil))
-			if w.Code != tt.code {
-				t.Fatalf("status = %d, want %d, body=%s", w.Code, tt.code, w.Body.String())
-			}
-			if !hasSchema(app.Schemas(), "bindQueryTestRequest") {
-				t.Fatalf("BindQueryAndValidate did not register request schema")
-			}
+			require.Equal(t, tt.code, w.Code, w.Body.String())
+			require.True(t, hasSchema(app.Schemas(), "bindQueryTestRequest"))
 		})
 	}
 }
@@ -77,12 +77,8 @@ func TestBindPathAndValidate(t *testing.T) {
 
 			w := httptest.NewRecorder()
 			app.Router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tt.url, nil))
-			if w.Code != tt.code {
-				t.Fatalf("status = %d, want %d, body=%s", w.Code, tt.code, w.Body.String())
-			}
-			if !hasSchema(app.Schemas(), "bindPathTestRequest") {
-				t.Fatalf("BindPathAndValidate did not register request schema")
-			}
+			require.Equal(t, tt.code, w.Code, w.Body.String())
+			require.True(t, hasSchema(app.Schemas(), "bindPathTestRequest"))
 		})
 	}
 }
@@ -134,13 +130,9 @@ func TestClientIPPriority(t *testing.T) {
 			app.Router.ServeHTTP(w, req)
 
 			var resp H
-			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-				t.Fatalf("decode response: %v", err)
-			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 			data := resp["data"].(map[string]any)
-			if data["ip"] != tt.want {
-				t.Fatalf("ip = %v, want %s", data["ip"], tt.want)
-			}
+			require.Equal(t, tt.want, data["ip"])
 		})
 	}
 }
@@ -167,45 +159,134 @@ func TestCookieSetCookieAndRedirect(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "session", Value: "abc"})
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("cookie status = %d, body=%s", w.Code, w.Body.String())
-	}
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	setCookie := w.Header().Get("Set-Cookie")
-	if !strings.Contains(setCookie, "seen=abc") || !strings.Contains(setCookie, "Path=/") || !strings.Contains(setCookie, "HttpOnly") {
-		t.Fatalf("unexpected Set-Cookie: %q", setCookie)
-	}
+	assert.Contains(t, setCookie, "seen=abc")
+	assert.Contains(t, setCookie, "Path=/")
+	assert.Contains(t, setCookie, "HttpOnly")
 
 	w = httptest.NewRecorder()
 	app.Router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/redirect", nil))
-	if w.Code != http.StatusFound || w.Header().Get("Location") != "/target" {
-		t.Fatalf("redirect status/location = %d/%q", w.Code, w.Header().Get("Location"))
-	}
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "/target", w.Header().Get("Location"))
 
 	w = httptest.NewRecorder()
 	app.Router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/bad-redirect", nil))
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("bad redirect status = %d, want 500", w.Code)
-	}
+	require.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
 func TestStaticFiles(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello"), 0644); err != nil {
-		t.Fatalf("write static file: %v", err)
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello"), 0644))
 
 	app := New()
 	app.Static("/static", dir)
 
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/static/hello.txt", nil))
-	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != "hello" {
-		t.Fatalf("static hit status/body = %d/%q", w.Code, w.Body.String())
-	}
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "hello", strings.TrimSpace(w.Body.String()))
 
 	w = httptest.NewRecorder()
 	app.Router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/static/missing.txt", nil))
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("static miss status = %d, want 404", w.Code)
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestParamAndQueryFailHelpers(t *testing.T) {
+	app := New()
+	app.Get("/items/:id/:active", func(c *Context) {
+		id, ok := c.ParamInt64OrFail("id")
+		if !ok {
+			return
+		}
+		page, ok := c.QueryInt64OrFail("page")
+		if !ok {
+			return
+		}
+		c.Success(H{
+			"id":      id,
+			"page":    page,
+			"active":  c.ParamBool("active"),
+			"verbose": c.QueryBool("verbose", false),
+			"missing": c.QueryInt64("missing", 9),
+		})
+	})
+
+	tests := []struct {
+		path string
+		code int
+	}{
+		{"/items/7/yes?page=2&verbose=true", http.StatusOK},
+		{"/items/bad/yes?page=2", http.StatusBadRequest},
+		{"/items/7/yes", http.StatusBadRequest},
+		{"/items/7/yes?page=bad", http.StatusBadRequest},
 	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			app.Router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			assert.Equal(t, tt.code, w.Code)
+		})
+	}
+}
+
+func TestContextResultHelpers(t *testing.T) {
+	app := New()
+	app.Get("/success", func(c *Context) {
+		value := H{"ok": true}
+		assert.True(t, c.SuccessIfNotNil(value, "item"))
+	})
+	app.Get("/success-nil", func(c *Context) {
+		var value *struct{}
+		assert.False(t, c.SuccessIfNotNil(value, "item"))
+	})
+	app.Get("/not-found-err", func(c *Context) {
+		assert.True(t, c.NotFoundIfNotFound(stderrors.New("missing"), "item"))
+	})
+	app.Get("/success-or-fail", func(c *Context) {
+		assert.True(t, c.SuccessIfNotNilOrFail(H{"ok": true}, nil, "item"))
+	})
+	app.Get("/success-or-fail-err", func(c *Context) {
+		assert.True(t, c.SuccessIfNotNilOrFail(nil, stderrors.New("missing"), "item"))
+	})
+	app.Get("/fail", func(c *Context) {
+		assert.True(t, c.FailIfError(stderrors.New("boom"), "failed"))
+	})
+	app.Get("/fail-meta", func(c *Context) {
+		assert.True(t, c.FailIfErrorWithMeta(stderrors.New("boom"), "failed", map[string]any{"key": "value"}))
+	})
+
+	tests := map[string]int{
+		"/success":             http.StatusOK,
+		"/success-nil":         http.StatusNotFound,
+		"/not-found-err":       http.StatusNotFound,
+		"/success-or-fail":     http.StatusOK,
+		"/success-or-fail-err": http.StatusNotFound,
+		"/fail":                http.StatusInternalServerError,
+		"/fail-meta":           http.StatusInternalServerError,
+	}
+
+	for path, want := range tests {
+		t.Run(path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			app.Router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+			assert.Equal(t, want, w.Code, w.Body.String())
+		})
+	}
+}
+
+func TestContextHandlerControlHelpers(t *testing.T) {
+	c := newContext(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil), nil)
+
+	c.SetHandlers([]HandlerFunc{
+		func(c *Context) { c.Next() },
+		func(c *Context) { c.Abort() },
+	})
+	assert.Equal(t, -1, c.GetHandlerIndex())
+	c.SetHandlerIndex(0)
+	assert.Equal(t, 0, c.GetHandlerIndex())
+	c.Abort()
+	assert.True(t, c.IsAborted())
+	assert.Equal(t, 0, c.StatusCode())
 }

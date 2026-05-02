@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/leebo/igo/core"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLogger(t *testing.T) {
@@ -35,9 +36,7 @@ func TestRecovery(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected status 500, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
 func TestCORS(t *testing.T) {
@@ -53,18 +52,14 @@ func TestCORS(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNoContent {
-		t.Errorf("expected status 204 for OPTIONS, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusNoContent, w.Code)
 
 	// Test regular request
 	req = httptest.NewRequest(http.MethodGet, "/cors", nil)
 	w = httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Errorf("expected CORS header '*', got '%s'", w.Header().Get("Access-Control-Allow-Origin"))
-	}
+	assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
 }
 
 func TestAuth(t *testing.T) {
@@ -80,9 +75,7 @@ func TestAuth(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected status 401 without auth, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	// With token
 	req = httptest.NewRequest(http.MethodGet, "/secure", nil)
@@ -90,9 +83,7 @@ func TestAuth(t *testing.T) {
 	w = httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200 with auth, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestRequestID(t *testing.T) {
@@ -107,9 +98,7 @@ func TestRequestID(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Header().Get("X-Request-ID") == "" {
-		t.Error("expected X-Request-ID header to be set")
-	}
+	assert.NotEmpty(t, w.Header().Get("X-Request-ID"))
 
 	// Test with existing ID
 	req = httptest.NewRequest(http.MethodGet, "/id", nil)
@@ -117,8 +106,5 @@ func TestRequestID(t *testing.T) {
 	w = httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Header().Get("X-Request-ID") != "custom-id" {
-		t.Errorf("expected X-Request-ID 'custom-id', got '%s'", w.Header().Get("X-Request-ID"))
-	}
+	assert.Equal(t, "custom-id", w.Header().Get("X-Request-ID"))
 }
-

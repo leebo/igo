@@ -3,13 +3,14 @@ package config
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNew(t *testing.T) {
 	c := New()
-	if c == nil {
-		t.Error("expected non-nil config")
-	}
+	assert.NotNil(t, c)
 }
 
 func TestConfig_SetGet(t *testing.T) {
@@ -19,17 +20,9 @@ func TestConfig_SetGet(t *testing.T) {
 	c.Set("count", 42)
 	c.Set("enabled", true)
 
-	if c.GetString("name") != "test" {
-		t.Errorf("expected 'test', got '%s'", c.GetString("name"))
-	}
-
-	if c.GetInt("count") != 42 {
-		t.Errorf("expected 42, got %d", c.GetInt("count"))
-	}
-
-	if c.GetBool("enabled") != true {
-		t.Errorf("expected true, got %v", c.GetBool("enabled"))
-	}
+	assert.Equal(t, "test", c.GetString("name"))
+	assert.Equal(t, 42, c.GetInt("count"))
+	assert.True(t, c.GetBool("enabled"))
 }
 
 func TestConfig_Default(t *testing.T) {
@@ -38,13 +31,8 @@ func TestConfig_Default(t *testing.T) {
 	c.Default("host", "localhost")
 	c.Default("port", 8080)
 
-	if c.GetString("host") != "localhost" {
-		t.Errorf("expected 'localhost', got '%s'", c.GetString("host"))
-	}
-
-	if c.GetInt("port") != 8080 {
-		t.Errorf("expected 8080, got %d", c.GetInt("port"))
-	}
+	assert.Equal(t, "localhost", c.GetString("host"))
+	assert.Equal(t, 8080, c.GetInt("port"))
 }
 
 func TestConfig_Unmarshal(t *testing.T) {
@@ -59,17 +47,9 @@ func TestConfig_Unmarshal(t *testing.T) {
 	}
 
 	var settings AppSettings
-	if err := c.Unmarshal(&settings); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
-
-	if settings.Name != "test-app" {
-		t.Errorf("expected 'test-app', got '%s'", settings.Name)
-	}
-
-	if settings.Port != 3000 {
-		t.Errorf("expected 3000, got %d", settings.Port)
-	}
+	require.NoError(t, c.Unmarshal(&settings))
+	assert.Equal(t, "test-app", settings.Name)
+	assert.Equal(t, 3000, settings.Port)
 }
 
 func TestConfig_UnmarshalKey(t *testing.T) {
@@ -84,13 +64,8 @@ func TestConfig_UnmarshalKey(t *testing.T) {
 	}
 
 	var settings AppSettings
-	if err := c.UnmarshalKey("app", &settings); err != nil {
-		t.Fatalf("UnmarshalKey() error = %v", err)
-	}
-
-	if settings.Name != "test-app" {
-		t.Errorf("expected 'test-app', got '%s'", settings.Name)
-	}
+	require.NoError(t, c.UnmarshalKey("app", &settings))
+	assert.Equal(t, "test-app", settings.Name)
 }
 
 func TestConfig_IsSet(t *testing.T) {
@@ -98,13 +73,8 @@ func TestConfig_IsSet(t *testing.T) {
 
 	c.Set("exists", "yes")
 
-	if !c.IsSet("exists") {
-		t.Error("expected 'exists' to be set")
-	}
-
-	if c.IsSet("not-exists") {
-		t.Error("expected 'not-exists' to not be set")
-	}
+	assert.True(t, c.IsSet("exists"))
+	assert.False(t, c.IsSet("not-exists"))
 }
 
 func TestConfig_AllSettings(t *testing.T) {
@@ -115,13 +85,8 @@ func TestConfig_AllSettings(t *testing.T) {
 
 	settings := c.AllSettings()
 
-	if settings["name"] != "test" {
-		t.Errorf("expected 'test', got '%v'", settings["name"])
-	}
-
-	if settings["count"].(int) != 42 {
-		t.Errorf("expected 42, got '%v'", settings["count"])
-	}
+	assert.Equal(t, "test", settings["name"])
+	assert.Equal(t, 42, settings["count"])
 }
 
 func TestConfig_GetFloat(t *testing.T) {
@@ -130,9 +95,7 @@ func TestConfig_GetFloat(t *testing.T) {
 	c.Set("pi", 3.14159)
 
 	result := c.GetFloat("pi")
-	if result != 3.14159 {
-		t.Errorf("expected 3.14159, got %f", result)
-	}
+	assert.Equal(t, 3.14159, result)
 }
 
 func TestConfig_GetInt64(t *testing.T) {
@@ -141,9 +104,7 @@ func TestConfig_GetInt64(t *testing.T) {
 	c.Set("big", int64(1<<62))
 
 	result := c.GetInt64("big")
-	if result != 1<<62 {
-		t.Errorf("expected %d, got %d", 1<<62, result)
-	}
+	assert.Equal(t, int64(1<<62), result)
 }
 
 func TestConfig_GetStringSlice(t *testing.T) {
@@ -152,13 +113,8 @@ func TestConfig_GetStringSlice(t *testing.T) {
 	c.Set("colors", []string{"red", "green", "blue"})
 
 	slice := c.GetStringSlice("colors")
-	if len(slice) != 3 {
-		t.Errorf("expected 3 items, got %d", len(slice))
-	}
-
-	if slice[0] != "red" {
-		t.Errorf("expected 'red', got '%s'", slice[0])
-	}
+	assert.Len(t, slice, 3)
+	assert.Equal(t, "red", slice[0])
 }
 
 func TestConfig_GetStringMap(t *testing.T) {
@@ -170,9 +126,7 @@ func TestConfig_GetStringMap(t *testing.T) {
 	})
 
 	m := c.GetStringMap("nested")
-	if m["host"] != "localhost" {
-		t.Errorf("expected 'localhost', got '%v'", m["host"])
-	}
+	assert.Equal(t, "localhost", m["host"])
 }
 
 func TestConfig_SetConfigType(t *testing.T) {
@@ -181,9 +135,7 @@ func TestConfig_SetConfigType(t *testing.T) {
 
 	c.Set("test", "value")
 
-	if !c.IsSet("test") {
-		t.Error("expected 'test' to be set")
-	}
+	assert.True(t, c.IsSet("test"))
 }
 
 func TestConfig_BindEnv(t *testing.T) {
@@ -191,9 +143,7 @@ func TestConfig_BindEnv(t *testing.T) {
 
 	c := New()
 	err := c.BindEnv("test", "TEST_BIND_ENV_VALUE")
-	if err != nil {
-		t.Fatalf("BindEnv() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	// Value should be empty until loaded
 	if c.GetString("test") != "" {
@@ -203,9 +153,7 @@ func TestConfig_BindEnv(t *testing.T) {
 
 func TestAppConfig_LoadFromFile_NotFound(t *testing.T) {
 	_, err := LoadFromFile("/nonexistent", "config", "yaml")
-	if err == nil {
-		t.Error("expected error for nonexistent config file")
-	}
+	assert.Error(t, err)
 }
 
 func TestConfig_ReadConfig(t *testing.T) {
@@ -215,17 +163,9 @@ func TestConfig_ReadConfig(t *testing.T) {
 	yamlContent := []byte(`name: test-app
 port: 9090`)
 
-	if err := c.ReadConfig(yamlContent); err != nil {
-		t.Fatalf("ReadConfig() error = %v", err)
-	}
-
-	if c.GetString("name") != "test-app" {
-		t.Errorf("expected 'test-app', got '%s'", c.GetString("name"))
-	}
-
-	if c.GetInt("port") != 9090 {
-		t.Errorf("expected 9090, got %d", c.GetInt("port"))
-	}
+	require.NoError(t, c.ReadConfig(yamlContent))
+	assert.Equal(t, "test-app", c.GetString("name"))
+	assert.Equal(t, 9090, c.GetInt("port"))
 }
 
 func TestConfig_FromEnv(t *testing.T) {
@@ -248,9 +188,7 @@ func TestConfig_AddConfigPath(t *testing.T) {
 	c.AddConfigPath("/etc")
 
 	// Just verify no panic
-	if c.Viper == nil {
-		t.Error("expected non-nil Viper")
-	}
+	assert.NotNil(t, c.Viper)
 }
 
 func TestConfig_SetConfigName(t *testing.T) {
@@ -258,7 +196,55 @@ func TestConfig_SetConfigName(t *testing.T) {
 	c.SetConfigName("myconfig")
 
 	// Just verify no panic
-	if c.Viper == nil {
-		t.Error("expected non-nil Viper")
+	assert.NotNil(t, c.Viper)
+}
+
+func TestAppConfigValidate(t *testing.T) {
+	cfg := &AppConfig{
+		Server:   ServerConfig{Port: ":8080"},
+		Database: DatabaseConfig{Dialect: "mysql", DSN: "user:pass@tcp(localhost:3306)/db"},
+		JWT:      JWTConfig{SecretKey: "not-a-placeholder"},
 	}
+
+	require.NoError(t, cfg.Validate())
+	assert.Equal(t, "info", cfg.Log.Level)
+	assert.Equal(t, "console", cfg.Log.Format)
+
+	invalid := &AppConfig{}
+	err := invalid.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "server.port is required")
+	assert.Contains(t, err.Error(), "database.dialect is required")
+	assert.Contains(t, err.Error(), "jwt.secret_key is required")
+
+	placeholder := &AppConfig{
+		Server:   ServerConfig{Port: ":8080"},
+		Database: DatabaseConfig{Dialect: "sqlite", DSN: "app.db"},
+		JWT:      JWTConfig{SecretKey: "secret"},
+	}
+	err = placeholder.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "placeholder")
+}
+
+func TestAppConfigValidateForProduction(t *testing.T) {
+	valid := &AppConfig{
+		Server:   ServerConfig{Port: ":8080"},
+		Database: DatabaseConfig{Dialect: "postgres", DSN: "postgres://example"},
+		JWT:      JWTConfig{SecretKey: "01234567890123456789012345678901"},
+		Log:      LogConfig{Level: "info", Format: "json"},
+	}
+	require.NoError(t, valid.ValidateForProduction())
+
+	invalid := &AppConfig{
+		Server:   ServerConfig{Port: ":8080"},
+		Database: DatabaseConfig{Dialect: "sqlite", DSN: "app.db"},
+		JWT:      JWTConfig{SecretKey: "short-secret"},
+		Log:      LogConfig{Level: "debug", Format: "console"},
+	}
+	err := invalid.ValidateForProduction()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least 32 characters")
+	assert.Contains(t, err.Error(), "sqlite is not recommended")
+	assert.Contains(t, err.Error(), "debug")
 }

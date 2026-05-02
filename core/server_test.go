@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestApp_Get(t *testing.T) {
@@ -19,9 +22,7 @@ func TestApp_Get(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestApp_Post(t *testing.T) {
@@ -36,9 +37,7 @@ func TestApp_Post(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestApp_Put(t *testing.T) {
@@ -54,9 +53,7 @@ func TestApp_Put(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestApp_Delete(t *testing.T) {
@@ -71,9 +68,7 @@ func TestApp_Delete(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNoContent {
-		t.Errorf("expected status 204, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusNoContent, w.Code)
 }
 
 func TestApp_Patch(t *testing.T) {
@@ -88,9 +83,7 @@ func TestApp_Patch(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestApp_Options(t *testing.T) {
@@ -105,9 +98,7 @@ func TestApp_Options(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestApp_Head(t *testing.T) {
@@ -122,9 +113,7 @@ func TestApp_Head(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestApp_Group(t *testing.T) {
@@ -141,9 +130,7 @@ func TestApp_Group(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestApp_GroupNested(t *testing.T) {
@@ -162,9 +149,7 @@ func TestApp_GroupNested(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestApp_GroupWithMiddlewares(t *testing.T) {
@@ -188,15 +173,9 @@ func TestApp_GroupWithMiddlewares(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
-	if w.Header().Get("X-Global") != "global" {
-		t.Errorf("expected X-Global=global, got %q", w.Header().Get("X-Global"))
-	}
-	if w.Header().Get("X-Group") != "group-middleware" {
-		t.Errorf("expected X-Group=group-middleware, got %q", w.Header().Get("X-Group"))
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "global", w.Header().Get("X-Global"))
+	assert.Equal(t, "group-middleware", w.Header().Get("X-Group"))
 
 	// 验证 Group 中间件不影响组外路由
 	app.Get("/outside", func(c *Context) {
@@ -206,9 +185,7 @@ func TestApp_GroupWithMiddlewares(t *testing.T) {
 	w2 := httptest.NewRecorder()
 	app.Router.ServeHTTP(w2, req2)
 
-	if w2.Header().Get("X-Group") != "" {
-		t.Errorf("X-Group should not be set for routes outside the group")
-	}
+	assert.Empty(t, w2.Header().Get("X-Group"))
 }
 
 func TestApp_Resources(t *testing.T) {
@@ -250,9 +227,7 @@ func TestApp_Resources(t *testing.T) {
 			w := httptest.NewRecorder()
 			app.Router.ServeHTTP(w, req)
 
-			if w.Code != tt.code {
-				t.Errorf("expected status %d, got %d", tt.code, w.Code)
-			}
+			assert.Equal(t, tt.code, w.Code)
 		})
 	}
 }
@@ -283,9 +258,7 @@ func TestApp_ResourcesWithMiddleware(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Header().Get("X-Resource") != "posts" {
-		t.Errorf("expected X-Resource header 'posts', got '%s'", w.Header().Get("X-Resource"))
-	}
+	assert.Equal(t, "posts", w.Header().Get("X-Resource"))
 }
 
 func TestApp_NotFound(t *testing.T) {
@@ -300,9 +273,7 @@ func TestApp_NotFound(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected status 404, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestApp_SetNotFound(t *testing.T) {
@@ -321,18 +292,14 @@ func TestApp_SetNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	// Test 404
 	req = httptest.NewRequest(http.MethodGet, "/not-found", nil)
 	w = httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected status 404, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestApp_PathNormalization(t *testing.T) {
@@ -348,9 +315,7 @@ func TestApp_PathNormalization(t *testing.T) {
 
 	app.Router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestApp_ChainMethods(t *testing.T) {
@@ -381,12 +346,10 @@ func TestApp_ChainMethods(t *testing.T) {
 			app.Router.ServeHTTP(w, req)
 
 			var resp H
-			json.Unmarshal(w.Body.Bytes(), &resp)
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 			data := resp["data"].(map[string]interface{})
 
-			if data[tt.want] != true {
-				t.Errorf("expected %s to be true", tt.want)
-			}
+			assert.True(t, data[tt.want].(bool))
 		})
 	}
 }
@@ -405,9 +368,7 @@ func TestApp_Concurrent(t *testing.T) {
 			w := httptest.NewRecorder()
 			app.Router.ServeHTTP(w, req)
 
-			if w.Code != http.StatusOK {
-				t.Errorf("expected status 200, got %d", w.Code)
-			}
+			assert.Equal(t, http.StatusOK, w.Code)
 		}()
 	}
 }

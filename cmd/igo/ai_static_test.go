@@ -10,6 +10,8 @@ import (
 	"github.com/leebo/igo/ai/schema"
 	routepkg "github.com/leebo/igo/core/route"
 	"github.com/leebo/igo/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadStaticProjectRoutes(t *testing.T) {
@@ -70,82 +72,58 @@ func createUser(c *core.Context) {
 	c.Created(core.H{"ok": true})
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "routes.go"), []byte(src), 0644); err != nil {
-		t.Fatalf("write source: %v", err)
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "routes.go"), []byte(src), 0644))
 
 	project, err := loadStaticProject(dir)
-	if err != nil {
-		t.Fatalf("load project: %v", err)
-	}
-	if len(project.routes) != 3 {
-		t.Fatalf("expected 3 routes, got %d: %+v", len(project.routes), project.routes)
-	}
+	require.NoError(t, err)
+	require.Len(t, project.routes, 3)
 
 	get := findStaticRoute(project.routes, "GET", "/api/v1/users/:id")
-	if get.Method != "GET" || get.Path != "/api/v1/users/:id" {
-		t.Fatalf("unexpected first route: %s %s", get.Method, get.Path)
-	}
-	if len(get.Middlewares) != 2 || get.Middlewares[0] != "groupMiddleware" || get.Middlewares[1] != "authMiddleware" {
-		t.Fatalf("middlewares not inferred: %+v", get.Middlewares)
-	}
-	if len(get.Params) != 2 {
-		t.Fatalf("expected path and query params, got %+v", get.Params)
-	}
-	if len(get.Responses) == 0 || get.Responses[len(get.Responses)-1].StatusCode != 200 {
-		t.Fatalf("success response not inferred: %+v", get.Responses)
-	}
+	assert.Equal(t, "GET", get.Method)
+	assert.Equal(t, "/api/v1/users/:id", get.Path)
+	assert.Equal(t, []string{"groupMiddleware", "authMiddleware"}, get.Middlewares)
+	require.Len(t, get.Params, 2)
+	require.NotEmpty(t, get.Responses)
+	assert.Equal(t, 200, get.Responses[len(get.Responses)-1].StatusCode)
 
 	list := findStaticRoute(project.routes, "GET", "/api/v1/users")
-	if len(list.Params) != 1 || list.Params[0].Name != "page" || list.Params[0].GTE != "1" || list.Params[0].LTE != "100" {
-		t.Fatalf("BindQueryAndValidate params not inferred: %+v", list.Params)
-	}
+	require.Len(t, list.Params, 1)
+	assert.Equal(t, "page", list.Params[0].Name)
+	assert.Equal(t, "1", list.Params[0].GTE)
+	assert.Equal(t, "100", list.Params[0].LTE)
 
 	post := findStaticRoute(project.routes, "POST", "/api/v1/users")
-	if post.Method != "POST" || post.RequestBody == nil || post.RequestBody.TypeName != "CreateUserRequest" {
-		t.Fatalf("request body not inferred: %+v", post)
-	}
-	if len(post.Responses) == 0 || post.Responses[0].StatusCode != 201 {
-		t.Fatalf("created response not inferred: %+v", post.Responses)
-	}
-	if !hasStaticSchema(project.schemas, "CreateUserRequest") || !hasStaticSchema(project.schemas, "ListUsersQuery") {
-		t.Fatalf("schemas not collected: %+v", project.schemas)
-	}
+	assert.Equal(t, "POST", post.Method)
+	require.NotNil(t, post.RequestBody)
+	assert.Equal(t, "CreateUserRequest", post.RequestBody.TypeName)
+	require.NotEmpty(t, post.Responses)
+	assert.Equal(t, 201, post.Responses[0].StatusCode)
+	assert.True(t, hasStaticSchema(project.schemas, "CreateUserRequest"))
+	assert.True(t, hasStaticSchema(project.schemas, "ListUsersQuery"))
 
 	spec := schema.NewRouteGenerator(project.routes, project.schemas...).Generate()
-	if spec.Components == nil || spec.Components.Schemas["CreateUserRequest"] == nil {
-		t.Fatalf("openapi components missing CreateUserRequest: %+v", spec.Components)
-	}
+	require.NotNil(t, spec.Components)
+	require.NotNil(t, spec.Components.Schemas["CreateUserRequest"])
 	bodyRef := spec.Paths["/api/v1/users"].POST.RequestBody.Content["application/json"].Schema.Ref
-	if bodyRef != "#/components/schemas/CreateUserRequest" {
-		t.Fatalf("request body ref = %q", bodyRef)
-	}
+	assert.Equal(t, "#/components/schemas/CreateUserRequest", bodyRef)
 }
 
 func TestRunAINewCommands(t *testing.T) {
 	var out bytes.Buffer
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
+	require.NoError(t, err)
 	os.Stdout = w
 	code := runAI([]string{"errors"})
 	w.Close()
 	os.Stdout = oldStdout
-	if code != 0 {
-		t.Fatalf("runAI errors code = %d", code)
-	}
-	if _, err := out.ReadFrom(r); err != nil {
-		t.Fatalf("read stdout: %v", err)
-	}
+	assert.Equal(t, 0, code)
+	_, err = out.ReadFrom(r)
+	require.NoError(t, err)
 	var payload []map[string]any
-	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
-		t.Fatalf("errors output is not json: %v\n%s", err, out.String())
-	}
-	if len(payload) == 0 || payload[0]["code"] == "" {
-		t.Fatalf("errors output missing codes: %+v", payload)
-	}
+	require.NoError(t, json.Unmarshal(out.Bytes(), &payload), out.String())
+	require.NotEmpty(t, payload)
+	assert.NotEmpty(t, payload[0]["code"])
 }
 
 func findStaticRoute(routes []*routepkg.RouteConfig, method, path string) *routepkg.RouteConfig {

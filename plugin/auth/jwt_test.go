@@ -3,6 +3,9 @@ package auth
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClient_Generate(t *testing.T) {
@@ -13,25 +16,11 @@ func TestClient_Generate(t *testing.T) {
 	})
 
 	tokens, err := client.Generate(1, "testuser", "admin")
-	if err != nil {
-		t.Fatalf("Generate() error = %v", err)
-	}
-
-	if tokens.AccessToken == "" {
-		t.Error("expected non-empty access token")
-	}
-
-	if tokens.RefreshToken == "" {
-		t.Error("expected non-empty refresh token")
-	}
-
-	if tokens.TokenType != "Bearer" {
-		t.Errorf("expected token type 'Bearer', got '%s'", tokens.TokenType)
-	}
-
-	if tokens.ExpiresIn == 0 {
-		t.Error("expected non-zero expires in")
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, tokens.AccessToken)
+	assert.NotEmpty(t, tokens.RefreshToken)
+	assert.Equal(t, "Bearer", tokens.TokenType)
+	assert.NotZero(t, tokens.ExpiresIn)
 }
 
 func TestClient_Generate_DifferentUsers(t *testing.T) {
@@ -44,9 +33,7 @@ func TestClient_Generate_DifferentUsers(t *testing.T) {
 	tokens1, _ := client.Generate(1, "user1", "user")
 	tokens2, _ := client.Generate(2, "user2", "admin")
 
-	if tokens1.AccessToken == tokens2.AccessToken {
-		t.Error("expected different tokens for different users")
-	}
+	assert.NotEqual(t, tokens1.AccessToken, tokens2.AccessToken)
 }
 
 func TestClient_Validate(t *testing.T) {
@@ -61,21 +48,10 @@ func TestClient_Validate(t *testing.T) {
 
 	// Validate token
 	claims, err := client.Validate(tokens.AccessToken)
-	if err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
-
-	if claims.UserID != 42 {
-		t.Errorf("expected UserID 42, got %d", claims.UserID)
-	}
-
-	if claims.Username != "testuser" {
-		t.Errorf("expected Username 'testuser', got '%s'", claims.Username)
-	}
-
-	if claims.Role != "user" {
-		t.Errorf("expected Role 'user', got '%s'", claims.Role)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), claims.UserID)
+	assert.Equal(t, "testuser", claims.Username)
+	assert.Equal(t, "user", claims.Role)
 }
 
 func TestClient_Validate_InvalidToken(t *testing.T) {
@@ -86,9 +62,7 @@ func TestClient_Validate_InvalidToken(t *testing.T) {
 	})
 
 	_, err := client.Validate("invalid-token")
-	if err == nil {
-		t.Error("expected error for invalid token")
-	}
+	assert.Error(t, err)
 }
 
 func TestClient_Validate_WrongSecret(t *testing.T) {
@@ -107,9 +81,7 @@ func TestClient_Validate_WrongSecret(t *testing.T) {
 	tokens, _ := client1.Generate(1, "user", "user")
 
 	_, err := client2.Validate(tokens.AccessToken)
-	if err == nil {
-		t.Error("expected error when validating with wrong secret")
-	}
+	assert.Error(t, err)
 }
 
 func TestClient_ValidateRefresh(t *testing.T) {
@@ -122,17 +94,9 @@ func TestClient_ValidateRefresh(t *testing.T) {
 	tokens, _ := client.Generate(1, "testuser", "user")
 
 	claims, err := client.ValidateRefresh(tokens.RefreshToken)
-	if err != nil {
-		t.Fatalf("ValidateRefresh() error = %v", err)
-	}
-
-	if claims.UserID != 1 {
-		t.Errorf("expected UserID 1, got %d", claims.UserID)
-	}
-
-	if claims.Username != "testuser" {
-		t.Errorf("expected Username 'testuser', got '%s'", claims.Username)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), claims.UserID)
+	assert.Equal(t, "testuser", claims.Username)
 }
 
 func TestClient_ValidateRefresh_WrongSecret(t *testing.T) {
@@ -151,9 +115,7 @@ func TestClient_ValidateRefresh_WrongSecret(t *testing.T) {
 	tokens, _ := client1.Generate(1, "user", "user")
 
 	_, err := client2.ValidateRefresh(tokens.RefreshToken)
-	if err == nil {
-		t.Error("expected error when validating refresh with wrong secret")
-	}
+	assert.Error(t, err)
 }
 
 func TestClient_Refresh(t *testing.T) {
@@ -166,17 +128,9 @@ func TestClient_Refresh(t *testing.T) {
 	tokens, _ := client.Generate(1, "testuser", "user")
 
 	tokens2, err := client.Refresh(tokens.RefreshToken)
-	if err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-
-	if tokens2.AccessToken == "" {
-		t.Error("expected non-empty access token")
-	}
-
-	if tokens2.RefreshToken == "" {
-		t.Error("expected non-empty refresh token")
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, tokens2.AccessToken)
+	assert.NotEmpty(t, tokens2.RefreshToken)
 }
 
 func TestClient_Refresh_InvalidToken(t *testing.T) {
@@ -187,9 +141,7 @@ func TestClient_Refresh_InvalidToken(t *testing.T) {
 	})
 
 	_, err := client.Refresh("invalid-refresh-token")
-	if err == nil {
-		t.Error("expected error for invalid refresh token")
-	}
+	assert.Error(t, err)
 }
 
 func TestNew(t *testing.T) {
@@ -199,9 +151,7 @@ func TestNew(t *testing.T) {
 		RefreshExpiry: 24 * time.Hour,
 	})
 
-	if client == nil {
-		t.Error("expected non-nil client")
-	}
+	assert.NotNil(t, client)
 }
 
 func TestClient_Generate_WithDifferentRoles(t *testing.T) {
@@ -216,18 +166,11 @@ func TestClient_Generate_WithDifferentRoles(t *testing.T) {
 	for _, role := range roles {
 		t.Run(role, func(t *testing.T) {
 			tokens, err := client.Generate(1, "user", role)
-			if err != nil {
-				t.Fatalf("Generate() error = %v", err)
-			}
+			require.NoError(t, err)
 
 			claims, err := client.Validate(tokens.AccessToken)
-			if err != nil {
-				t.Fatalf("Validate() error = %v", err)
-			}
-
-			if claims.Role != role {
-				t.Errorf("expected Role '%s', got '%s'", role, claims.Role)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, role, claims.Role)
 		})
 	}
 }
@@ -242,11 +185,14 @@ func TestClaims_Fields(t *testing.T) {
 	tokens, _ := client.Generate(100, "testuser", "admin")
 	claims, _ := client.Validate(tokens.AccessToken)
 
-	if claims.Issuer != "igo" {
-		t.Errorf("expected Issuer 'igo', got '%s'", claims.Issuer)
-	}
+	assert.Equal(t, "igo", claims.Issuer)
+	assert.Equal(t, int64(100), claims.UserID)
+}
 
-	if claims.UserID != 100 {
-		t.Errorf("expected UserID 100, got %d", claims.UserID)
-	}
+func TestJWTMiddleware(t *testing.T) {
+	client := New(Config{SecretKey: "test-secret-key", Expiration: time.Hour, RefreshExpiry: 24 * time.Hour})
+	middleware := JWTMiddleware(client)
+
+	assert.True(t, middleware(&Claims{UserID: 1, Username: "alice"}))
+	assert.True(t, middleware(nil))
 }

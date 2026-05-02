@@ -6,11 +6,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	igo "github.com/leebo/igo"
 	"github.com/leebo/igo/core"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -70,9 +71,7 @@ func runRequest(t *testing.T, app *igo.App, method, path string, body []byte) *h
 func decodeBody(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var m map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil {
-		t.Fatalf("decode body: %v\nraw: %s", err, w.Body.String())
-	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &m), w.Body.String())
 	return m
 }
 
@@ -129,12 +128,8 @@ func TestUserHandler_Get(t *testing.T) {
 
 			w := runRequest(t, app, http.MethodGet, tt.path, nil)
 
-			if w.Code != tt.wantStatus {
-				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
-			}
-			if !strings.Contains(w.Body.String(), tt.wantBody) {
-				t.Errorf("body should contain %q, got: %s", tt.wantBody, w.Body.String())
-			}
+			assert.Equal(t, tt.wantStatus, w.Code)
+			assert.Contains(t, w.Body.String(), tt.wantBody)
 		})
 	}
 }
@@ -193,12 +188,8 @@ func TestUserHandler_Create(t *testing.T) {
 
 			w := runRequest(t, app, http.MethodPost, "/users", []byte(tt.body))
 
-			if w.Code != tt.wantStatus {
-				t.Errorf("status = %d, want %d. body=%s", w.Code, tt.wantStatus, w.Body.String())
-			}
-			if !strings.Contains(w.Body.String(), tt.wantContain) {
-				t.Errorf("body should contain %q, got: %s", tt.wantContain, w.Body.String())
-			}
+			assert.Equal(t, tt.wantStatus, w.Code, w.Body.String())
+			assert.Contains(t, w.Body.String(), tt.wantContain)
 		})
 	}
 }
@@ -215,12 +206,8 @@ func TestUserHandler_Create_CallsService(t *testing.T) {
 
 	runRequest(t, app, http.MethodPost, "/users", []byte(`{"name":"Charlie"}`))
 
-	if mock.created == nil {
-		t.Fatal("expected service.Create to be called, but it wasn't")
-	}
-	if mock.created.Name != "Charlie" {
-		t.Errorf("created.Name = %q, want %q", mock.created.Name, "Charlie")
-	}
+	require.NotNil(t, mock.created)
+	assert.Equal(t, "Charlie", mock.created.Name)
 }
 
 // =============================================================================
@@ -241,17 +228,13 @@ func TestMiddleware_AddsHeader(t *testing.T) {
 
 	w := runRequest(t, app, http.MethodGet, "/ping", nil)
 
-	if w.Code != 200 {
-		t.Errorf("status = %d, want 200", w.Code)
-	}
-	if w.Header().Get("X-Trace-ID") != "trace-123" {
-		t.Errorf("X-Trace-ID = %q, want trace-123", w.Header().Get("X-Trace-ID"))
-	}
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "trace-123", w.Header().Get("X-Trace-ID"))
 
 	body := decodeBody(t, w)
-	if data, ok := body["data"].(map[string]any); !ok || data["pong"] != true {
-		t.Errorf("expected data.pong=true, got %v", body)
-	}
+	data, ok := body["data"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, true, data["pong"])
 }
 
 // =============================================================================
@@ -276,10 +259,6 @@ func TestMiddleware_ShortCircuits(t *testing.T) {
 
 	w := runRequest(t, app, http.MethodGet, "/protected", nil)
 
-	if w.Code != 401 {
-		t.Errorf("status = %d, want 401", w.Code)
-	}
-	if handlerCalled {
-		t.Error("handler should NOT be called when middleware short-circuits")
-	}
+	assert.Equal(t, 401, w.Code)
+	assert.False(t, handlerCalled)
 }

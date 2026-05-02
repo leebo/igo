@@ -3,6 +3,8 @@ package logging
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -12,13 +14,8 @@ func TestNew(t *testing.T) {
 		Format:     "console",
 		OutputPath: "stdout",
 	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	if client == nil {
-		t.Error("expected non-nil client")
-	}
+	require.NoError(t, err)
+	assert.NotNil(t, client)
 }
 
 func TestMustNew(t *testing.T) {
@@ -28,9 +25,7 @@ func TestMustNew(t *testing.T) {
 		OutputPath: "stdout",
 	})
 
-	if client == nil {
-		t.Error("expected non-nil client")
-	}
+	assert.NotNil(t, client)
 }
 
 func TestClient_Info(t *testing.T) {
@@ -102,58 +97,42 @@ func TestClient_Sugar(t *testing.T) {
 
 func TestString(t *testing.T) {
 	field := String("key", "value")
-	if field.Key != "key" {
-		t.Errorf("expected key 'key', got '%s'", field.Key)
-	}
+	assert.Equal(t, "key", field.Key)
 }
 
 func TestInt(t *testing.T) {
 	field := Int("count", 42)
-	if field.Key != "count" {
-		t.Errorf("expected key 'count', got '%s'", field.Key)
-	}
+	assert.Equal(t, "count", field.Key)
 }
 
 func TestInt64(t *testing.T) {
 	field := Int64("big", 1<<62)
-	if field.Key != "big" {
-		t.Errorf("expected key 'big', got '%s'", field.Key)
-	}
+	assert.Equal(t, "big", field.Key)
 }
 
 func TestFloat64(t *testing.T) {
 	field := Float64("pi", 3.14159)
-	if field.Key != "pi" {
-		t.Errorf("expected key 'pi', got '%s'", field.Key)
-	}
+	assert.Equal(t, "pi", field.Key)
 }
 
 func TestBool(t *testing.T) {
 	field := Bool("flag", true)
-	if field.Key != "flag" {
-		t.Errorf("expected key 'flag', got '%s'", field.Key)
-	}
+	assert.Equal(t, "flag", field.Key)
 }
 
 func TestStrings(t *testing.T) {
 	field := Strings("names", []string{"a", "b", "c"})
-	if field.Key != "names" {
-		t.Errorf("expected key 'names', got '%s'", field.Key)
-	}
+	assert.Equal(t, "names", field.Key)
 }
 
 func TestInt64s(t *testing.T) {
 	field := Int64s("ids", []int64{1, 2, 3})
-	if field.Key != "ids" {
-		t.Errorf("expected key 'ids', got '%s'", field.Key)
-	}
+	assert.Equal(t, "ids", field.Key)
 }
 
 func TestAny(t *testing.T) {
 	field := Any("data", map[string]int{"a": 1})
-	if field.Key != "data" {
-		t.Errorf("expected key 'data', got '%s'", field.Key)
-	}
+	assert.Equal(t, "data", field.Key)
 }
 
 type customObject struct {
@@ -167,9 +146,7 @@ func (c customObject) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 
 func TestObject(t *testing.T) {
 	field := Object("custom", customObject{Name: "test"})
-	if field.Key != "custom" {
-		t.Errorf("expected key 'custom', got '%s'", field.Key)
-	}
+	assert.Equal(t, "custom", field.Key)
 }
 
 func TestFieldTypes(t *testing.T) {
@@ -188,9 +165,7 @@ func TestFieldTypes(t *testing.T) {
 func TestError(t *testing.T) {
 	err := &testError{"test error"}
 	field := Error(err)
-	if field.Key != "error" {
-		t.Errorf("expected key 'error', got '%s'", field.Key)
-	}
+	assert.Equal(t, "error", field.Key)
 }
 
 type testError struct {
@@ -208,9 +183,7 @@ func TestConfig_InvalidLevel(t *testing.T) {
 		Format:     "console",
 		OutputPath: "stdout",
 	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	client.Info("test with invalid level")
 }
@@ -225,9 +198,7 @@ func TestConfig_DifferentFormats(t *testing.T) {
 				Format:     format,
 				OutputPath: "stdout",
 			})
-			if err != nil {
-				t.Fatalf("New() error for format %s: %v", format, err)
-			}
+			require.NoError(t, err)
 
 			client.Info("test message")
 		})
@@ -244,9 +215,7 @@ func TestConfig_DifferentOutputs(t *testing.T) {
 				Format:     "console",
 				OutputPath: output,
 			})
-			if err != nil {
-				t.Fatalf("New() error for output %s: %v", output, err)
-			}
+			require.NoError(t, err)
 
 			client.Info("test message")
 		})
@@ -269,9 +238,7 @@ func TestNew_FileOutput(t *testing.T) {
 		Format:     "json",
 		OutputPath: "/tmp/test.log",
 	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	client.Info("file test")
 	client.Sync()

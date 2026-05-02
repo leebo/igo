@@ -10,6 +10,8 @@ import (
 	errorspkg "github.com/leebo/igo/core/errors"
 	routepkg "github.com/leebo/igo/core/route"
 	"github.com/leebo/igo/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type aiRuntimeResponse struct {
@@ -33,25 +35,13 @@ func TestAppRegistriesAreIsolated(t *testing.T) {
 	app1.RegisterSchema(aiRuntimeResponse{})
 	app2.Get("/two", func(c *Context) { c.Success(H{"app": 2}) })
 
-	if got := len(app1.Routes()); got != 1 {
-		t.Fatalf("app1 route count = %d, want 1", got)
-	}
-	if got := len(app2.Routes()); got != 1 {
-		t.Fatalf("app2 route count = %d, want 1", got)
-	}
-	if app1.Routes()[0].Path != "/one" {
-		t.Fatalf("app1 route = %s, want /one", app1.Routes()[0].Path)
-	}
-	if app2.Routes()[0].Path != "/two" {
-		t.Fatalf("app2 route = %s, want /two", app2.Routes()[0].Path)
-	}
+	require.Len(t, app1.Routes(), 1)
+	require.Len(t, app2.Routes(), 1)
+	assert.Equal(t, "/one", app1.Routes()[0].Path)
+	assert.Equal(t, "/two", app2.Routes()[0].Path)
 
-	if !hasSchema(app1.Schemas(), "aiRuntimeResponse") {
-		t.Fatalf("app1 schema registry missing aiRuntimeResponse: %+v", app1.Schemas())
-	}
-	if hasSchema(app2.Schemas(), "aiRuntimeResponse") {
-		t.Fatalf("app2 schema registry was polluted: %+v", app2.Schemas())
-	}
+	assert.True(t, hasSchema(app1.Schemas(), "aiRuntimeResponse"))
+	assert.False(t, hasSchema(app2.Schemas(), "aiRuntimeResponse"))
 }
 
 func TestRegisterAIRoutesExposeMetadata(t *testing.T) {
@@ -66,18 +56,14 @@ func TestRegisterAIRoutesExposeMetadata(t *testing.T) {
 	var routes []routepkg.RouteConfig
 	getJSON(t, app, "/_ai/routes", &routes)
 	userRoute := findRoute(routes, http.MethodGet, "/users/:id")
-	if userRoute == nil {
-		t.Fatalf("/_ai/routes missing GET /users/:id: %+v", routes)
-	}
-	if userRoute.HandlerName == "" || userRoute.FilePath == "" || userRoute.LineNumber == 0 {
-		t.Fatalf("route handler metadata incomplete: %+v", userRoute)
-	}
-	if len(userRoute.Params) != 1 || userRoute.Params[0].Name != "id" || userRoute.Params[0].In != "path" {
-		t.Fatalf("route path params not inferred: %+v", userRoute.Params)
-	}
-	if !containsSuffix(userRoute.Middlewares, "aiRouteMiddleware") {
-		t.Fatalf("route middleware name not recorded: %+v", userRoute.Middlewares)
-	}
+	require.NotNil(t, userRoute)
+	assert.NotEmpty(t, userRoute.HandlerName)
+	assert.NotEmpty(t, userRoute.FilePath)
+	assert.NotZero(t, userRoute.LineNumber)
+	require.Len(t, userRoute.Params, 1)
+	assert.Equal(t, "id", userRoute.Params[0].Name)
+	assert.Equal(t, "path", userRoute.Params[0].In)
+	assert.True(t, containsSuffix(userRoute.Middlewares, "aiRouteMiddleware"))
 
 	var middlewarePayload struct {
 		Global []struct {
@@ -94,21 +80,17 @@ func TestRegisterAIRoutesExposeMetadata(t *testing.T) {
 		} `json:"routes"`
 	}
 	getJSON(t, app, "/_ai/middlewares", &middlewarePayload)
-	if len(middlewarePayload.Global) != 1 || !strings.HasSuffix(middlewarePayload.Global[0].Name, "aiRouteGlobalMiddleware") {
-		t.Fatalf("global middleware metadata not recorded: %+v", middlewarePayload.Global)
-	}
+	require.Len(t, middlewarePayload.Global, 1)
+	assert.True(t, strings.HasSuffix(middlewarePayload.Global[0].Name, "aiRouteGlobalMiddleware"))
 
 	var schemas []types.TypeSchema
 	getJSON(t, app, "/_ai/schemas", &schemas)
-	if !hasSchemaPtrs(schemas, "aiRuntimeResponse") {
-		t.Fatalf("/_ai/schemas missing aiRuntimeResponse: %+v", schemas)
-	}
+	assert.True(t, hasSchemaPtrs(schemas, "aiRuntimeResponse"))
 
 	var errorCodes []errorspkg.ErrorCodeInfo
 	getJSON(t, app, "/_ai/errors", &errorCodes)
-	if len(errorCodes) == 0 || errorCodes[0].Code == "" {
-		t.Fatalf("/_ai/errors returned empty payload")
-	}
+	require.NotEmpty(t, errorCodes)
+	assert.NotEmpty(t, errorCodes[0].Code)
 
 	var openapi struct {
 		OpenAPI    string `json:"openapi"`
@@ -117,18 +99,13 @@ func TestRegisterAIRoutesExposeMetadata(t *testing.T) {
 		} `json:"components"`
 	}
 	getJSON(t, app, "/_ai/openapi", &openapi)
-	if openapi.OpenAPI != "3.0.0" {
-		t.Fatalf("openapi version = %q, want 3.0.0", openapi.OpenAPI)
-	}
-	if _, ok := openapi.Components.Schemas["aiRuntimeResponse"]; !ok {
-		t.Fatalf("openapi components missing aiRuntimeResponse: %+v", openapi.Components.Schemas)
-	}
+	assert.Equal(t, "3.0.0", openapi.OpenAPI)
+	assert.Contains(t, openapi.Components.Schemas, "aiRuntimeResponse")
 
 	var conventions map[string]any
 	getJSON(t, app, "/_ai/conventions", &conventions)
-	if conventions["workflow"] == nil || conventions["endpoints"] == nil {
-		t.Fatalf("/_ai/conventions missing workflow/endpoints: %+v", conventions)
-	}
+	assert.NotNil(t, conventions["workflow"])
+	assert.NotNil(t, conventions["endpoints"])
 }
 
 func getJSON(t *testing.T, app *App, target string, out any) {
@@ -136,12 +113,8 @@ func getJSON(t *testing.T, app *App, target string, out any) {
 	req := httptest.NewRequest(http.MethodGet, target, nil)
 	w := httptest.NewRecorder()
 	app.Router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("%s status = %d, body=%s", target, w.Code, w.Body.String())
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), out); err != nil {
-		t.Fatalf("%s json decode: %v\nbody=%s", target, err, w.Body.String())
-	}
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), out), w.Body.String())
 }
 
 func findRoute(routes []routepkg.RouteConfig, method, path string) *routepkg.RouteConfig {
