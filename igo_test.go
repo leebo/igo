@@ -71,7 +71,8 @@ func TestTopLevelConstructorsAndHelpers(t *testing.T) {
 
 	simple := Simple()
 	require.NotNil(t, simple)
-	assert.Equal(t, 3, simple.Router.GlobalMiddlewareCount())
+	// Simple 在 dev/test 下注册：Recovery + CORS + Logger + recorderMiddleware (RegisterAIRoutes 内自动启用)
+	assert.Equal(t, 4, simple.Router.GlobalMiddlewareCount())
 }
 
 func TestRegisterAppSchema(t *testing.T) {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	stderrors "errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -372,6 +373,156 @@ func TestContext_JSON(t *testing.T) {
 	app.Router.ServeHTTP(w, req)
 
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+}
+
+type schemaUsageRequest struct {
+	Name string `json:"name" validate:"required"`
+}
+
+type schemaUsageResponse struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+type schemaUsageQuery struct {
+	Page int `json:"page"`
+}
+
+type schemaUsagePath struct {
+	ID int64 `json:"id"`
+}
+
+func TestErrorResponse_TraceIDInjected(t *testing.T) {
+	app := New()
+
+	// 模拟 RequestID middleware
+	app.Use(func(c *Context) {
+		c.Set(CtxKeyRequestID, "trace-abc")
+		c.Header("X-Request-ID", "trace-abc")
+		c.Next()
+	})
+
+	cases := []struct {
+		name    string
+		handler func(c *Context)
+		status  int
+	}{
+		{name: "BadRequest", handler: func(c *Context) { c.BadRequest("bad") }, status: http.StatusBadRequest},
+		{name: "NotFound", handler: func(c *Context) { c.NotFound("missing") }, status: http.StatusNotFound},
+		{name: "Unauthorized", handler: func(c *Context) { c.Unauthorized("auth") }, status: http.StatusUnauthorized},
+		{name: "InternalError", handler: func(c *Context) { c.InternalError("boom") }, status: http.StatusInternalServerError},
+		{name: "BadRequestWrap", handler: func(c *Context) { c.BadRequestWrap(stderrorsNew("boom"), "bad input") }, status: http.StatusBadRequest},
+		{name: "NotFoundWrap", handler: func(c *Context) { c.NotFoundWrap(stderrorsNew("missing"), "user") }, status: http.StatusNotFound},
+		{name: "InternalErrorWrap", handler: func(c *Context) { c.InternalErrorWrap(stderrorsNew("db"), "save", nil) }, status: http.StatusInternalServerError},
+		{name: "ValidationError", handler: func(c *Context) { c.ValidationError(ErrBodyRequired) }, status: http.StatusUnprocessableEntity},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := New()
+			a.Use(func(c *Context) {
+				c.Set(CtxKeyRequestID, "trace-abc")
+				c.Header("X-Request-ID", "trace-abc")
+				c.Next()
+			})
+			a.Get("/x", tc.handler)
+
+			w := httptest.NewRecorder()
+			a.Router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/x", nil))
+			require.Equal(t, tc.status, w.Code)
+
+			var resp map[string]any
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			errObj, ok := resp["error"].(map[string]any)
+			require.True(t, ok, "missing error block: %s", w.Body.String())
+			assert.Equal(t, "trace-abc", errObj["traceId"], "%s should carry traceId", tc.name)
+		})
+	}
+	_ = app // ensure outer app doesn't get GC'd in test scope
+}
+
+func stderrorsNew(s string) error {
+	return stderrors.New(s)
+}
+
+func TestSchemaUsage_AutoTagged(t *testing.T) {
+	app := New()
+
+	app.Post("/users", func(c *Context) {
+		req, ok := BindAndValidate[schemaUsageRequest](c)
+		if !ok {
+			return
+		}
+		c.Created(schemaUsageResponse{ID: 1, Name: req.Name})
+	})
+
+	app.Get("/users", func(c *Context) {
+		_, ok := BindQueryAndValidate[schemaUsageQuery](c)
+		if !ok {
+			return
+		}
+		c.Success([]schemaUsageResponse{{ID: 1, Name: "alice"}})
+	})
+
+	app.Get("/users/:id", func(c *Context) {
+		_, ok := BindPathAndValidate[schemaUsagePath](c)
+		if !ok {
+			return
+		}
+		c.Success(schemaUsageResponse{ID: 1, Name: "alice"})
+	})
+
+	body := `{"name":"alice"}`
+	for _, req := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(body)),
+		httptest.NewRequest(http.MethodGet, "/users?page=2", nil),
+		httptest.NewRequest(http.MethodGet, "/users/1", nil),
+	} {
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		app.Router.ServeHTTP(w, req)
+		require.True(t, w.Code >= 200 && w.Code < 300, "status %d", w.Code)
+	}
+
+	schemas := app.Schemas()
+	byName := map[string][]string{}
+	for _, s := range schemas {
+		byName[s.Name] = s.Usage
+	}
+
+	assert.ElementsMatch(t, []string{"request"}, byName["schemaUsageRequest"])
+	assert.ElementsMatch(t, []string{"query"}, byName["schemaUsageQuery"])
+	assert.ElementsMatch(t, []string{"path"}, byName["schemaUsagePath"])
+	assert.ElementsMatch(t, []string{"response"}, byName["schemaUsageResponse"],
+		"response DTO should be auto-discovered from c.Success / c.Created without manual RegisterSchema")
+}
+
+func TestSchemaUsage_MergeOnRegisterAndBind(t *testing.T) {
+	// 同一类型既被 RegisterSchema (response) 又作为请求体 (request) 使用：两个 usage 都应留下。
+	app := New()
+	app.RegisterSchema(schemaUsageRequest{})
+
+	app.Post("/x", func(c *Context) {
+		req, ok := BindAndValidate[schemaUsageRequest](c)
+		if !ok {
+			return
+		}
+		c.Success(req)
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"name":"bob"}`))
+	r.Header.Set("Content-Type", "application/json")
+	app.Router.ServeHTTP(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	for _, s := range app.Schemas() {
+		if s.Name == "schemaUsageRequest" {
+			assert.ElementsMatch(t, []string{"request", "response"}, s.Usage)
+			return
+		}
+	}
+	t.Fatal("schemaUsageRequest not found")
 }
 
 func TestContext_Error(t *testing.T) {

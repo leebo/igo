@@ -15,11 +15,11 @@ import (
 	"github.com/leebo/igo/types"
 )
 
-// registerSchemaOnce 把类型注册到当前 App 的 schema 注册表（已注册则跳过反射）。
+// registerSchemaOnce 把类型注册到当前 App 的 schema 注册表（已注册则只补 Usage）。
 // 由 BindAndValidate / BindQueryAndValidate / BindPathAndValidate 自动调用，
-// 让 /_ai/schemas 端点能列出所有被运行时绑定的类型。
+// 让 /_ai/schemas 端点能列出所有被运行时绑定的类型，并标注其用途。
 // nil registry 直接 no-op (Router 路径总是注入非 nil registry)。
-func registerSchemaOnce(registry *types.TypeRegistry, v interface{}) {
+func registerSchemaOnce(registry *types.TypeRegistry, v interface{}, usage string) {
 	if registry == nil {
 		return
 	}
@@ -27,7 +27,7 @@ func registerSchemaOnce(registry *types.TypeRegistry, v interface{}) {
 	if t == nil {
 		return
 	}
-	if t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -38,10 +38,77 @@ func registerSchemaOnce(registry *types.TypeRegistry, v interface{}) {
 		return // 匿名结构体跳过
 	}
 	if registry.GetType(name) != nil {
+		if usage != "" {
+			registry.RegisterTypeUsage(name, usage)
+		}
 		return
 	}
 	schema := types.ExtractSchemaFromType(t)
+	if usage != "" {
+		schema.Usage = []string{usage}
+	}
 	registry.RegisterType(&schema)
+}
+
+// registerResponseSchemaOnce 在 c.Success / c.Created / c.JSON 时尝试把响应负载
+// 的具体类型注册为 schema（usage="response"）。仅识别命名结构体；H/map、原生
+// 类型、匿名结构体、ListResponse 等参数化类型按其元素类型展开。
+func registerResponseSchemaOnce(registry *types.TypeRegistry, v interface{}) {
+	if registry == nil || v == nil {
+		return
+	}
+	t := reflect.TypeOf(v)
+	visited := make(map[reflect.Type]struct{})
+	registerResponseSchemaType(registry, t, visited)
+}
+
+func registerResponseSchemaType(registry *types.TypeRegistry, t reflect.Type, visited map[reflect.Type]struct{}) {
+	if t == nil {
+		return
+	}
+	if _, seen := visited[t]; seen {
+		return
+	}
+	visited[t] = struct{}{}
+
+	switch t.Kind() {
+	case reflect.Ptr:
+		registerResponseSchemaType(registry, t.Elem(), visited)
+		return
+	case reflect.Slice, reflect.Array:
+		registerResponseSchemaType(registry, t.Elem(), visited)
+		return
+	case reflect.Map:
+		registerResponseSchemaType(registry, t.Elem(), visited)
+		return
+	case reflect.Interface:
+		return
+	case reflect.Struct:
+		// fall through
+	default:
+		return
+	}
+
+	name := t.Name()
+	if name == "" {
+		return // 匿名 / 字面量 struct 不入注册表
+	}
+	if existing := registry.GetType(name); existing != nil {
+		registry.RegisterTypeUsage(name, types.UsageResponse)
+		// 仍递归内部字段，可能首次发现嵌套响应类型
+	} else {
+		schema := types.ExtractSchemaFromType(t)
+		schema.Usage = []string{types.UsageResponse}
+		registry.RegisterType(&schema)
+	}
+
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" && !f.Anonymous {
+			continue
+		}
+		registerResponseSchemaType(registry, f.Type, visited)
+	}
 }
 
 // LoggerInterface 日志接口
@@ -79,7 +146,12 @@ type Context struct {
 	GinContextData map[string]interface{}
 	errorChain     []*errors.StructuredError
 	typeRegistry   *types.TypeRegistry
+	values         map[string]any
 }
+
+// CtxKeyRequestID 是 RequestID 中间件写入到 Context.values 的标准键名。
+// 错误响应渲染时从这里读取并填充响应体的 traceId 字段。
+const CtxKeyRequestID = "request_id"
 
 type urlValues map[string][]string
 
@@ -99,6 +171,50 @@ func newContext(w http.ResponseWriter, req *http.Request, typeRegistry *types.Ty
 // Use 注册中间件
 func (c *Context) Use(middleware MiddlewareFunc) {
 	c.handlers = append(c.handlers, middleware)
+}
+
+// Set 在 Context 上存放任意键值，对中间件之间传递信息很有用（例如 RequestID
+// 中间件把请求 ID 写到 c.Set(CtxKeyRequestID, id)）。
+func (c *Context) Set(key string, value any) {
+	if c.values == nil {
+		c.values = make(map[string]any)
+	}
+	c.values[key] = value
+}
+
+// Get 读取之前 Set 的值。第二个返回值表示是否存在。
+func (c *Context) Get(key string) (any, bool) {
+	if c.values == nil {
+		return nil, false
+	}
+	v, ok := c.values[key]
+	return v, ok
+}
+
+// GetString 是 Get 的字符串便利方法，找不到或类型不匹配时返回 ""。
+func (c *Context) GetString(key string) string {
+	v, ok := c.Get(key)
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
+// TraceID 返回当前请求的 trace ID（来自 RequestID 中间件）。
+// 未注册中间件或尚未生成时返回 ""，错误响应渲染会跳过 traceId 字段。
+func (c *Context) TraceID() string {
+	if id := c.GetString(CtxKeyRequestID); id != "" {
+		return id
+	}
+	// fallback: 直接从请求/响应头读
+	if id := c.Request.Header.Get("X-Request-ID"); id != "" {
+		return id
+	}
+	if c.Writer != nil {
+		return c.Writer.Header().Get("X-Request-ID")
+	}
+	return ""
 }
 
 // Next 执行下一个处理器
@@ -260,7 +376,7 @@ func (c *Context) BindPath(v interface{}) error {
 //	if !ok { return }
 func BindAndValidate[T any](c *Context) (*T, bool) {
 	var req T
-	registerSchemaOnce(c.typeRegistry, &req)
+	registerSchemaOnce(c.typeRegistry, &req, types.UsageRequest)
 	if err := c.BindJSON(&req); err != nil {
 		c.BadRequestWrap(err, "invalid request body")
 		return nil, false
@@ -280,7 +396,7 @@ func BindAndValidate[T any](c *Context) (*T, bool) {
 //	if !ok { return }
 func BindQueryAndValidate[T any](c *Context) (*T, bool) {
 	var req T
-	registerSchemaOnce(c.typeRegistry, &req)
+	registerSchemaOnce(c.typeRegistry, &req, types.UsageQuery)
 	if err := c.BindQuery(&req); err != nil {
 		c.BadRequestWrap(err, "invalid query parameters")
 		return nil, false
@@ -300,7 +416,7 @@ func BindQueryAndValidate[T any](c *Context) (*T, bool) {
 //	if !ok { return }
 func BindPathAndValidate[T any](c *Context) (*T, bool) {
 	var req T
-	registerSchemaOnce(c.typeRegistry, &req)
+	registerSchemaOnce(c.typeRegistry, &req, types.UsagePath)
 	if err := c.BindPath(&req); err != nil {
 		c.BadRequestWrap(err, "invalid path parameters")
 		return nil, false
@@ -314,6 +430,9 @@ func BindPathAndValidate[T any](c *Context) (*T, bool) {
 
 // JSON 返回 JSON 响应
 func (c *Context) JSON(status int, v interface{}) {
+	if status >= 200 && status < 300 {
+		registerResponseSchemaOnce(c.typeRegistry, v)
+	}
 	c.statusCode = status
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(status)
@@ -322,11 +441,13 @@ func (c *Context) JSON(status int, v interface{}) {
 
 // Success 返回成功响应（200）
 func (c *Context) Success(v interface{}) {
+	registerResponseSchemaOnce(c.typeRegistry, v)
 	c.JSON(http.StatusOK, H{"data": v})
 }
 
 // Created 返回创建成功响应（201）
 func (c *Context) Created(v interface{}) {
+	registerResponseSchemaOnce(c.typeRegistry, v)
 	c.JSON(http.StatusCreated, H{"data": v})
 }
 
@@ -336,14 +457,16 @@ func (c *Context) NoContent() {
 	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
-// Error 返回错误响应
+// Error 返回错误响应。如果 RequestID 中间件已设置 trace ID，会自动注入到响应体。
 func (c *Context) Error(status int, code, message string) {
-	c.JSON(status, H{
-		"error": H{
-			"code":    code,
-			"message": message,
-		},
-	})
+	errBody := H{
+		"code":    code,
+		"message": message,
+	}
+	if id := c.TraceID(); id != "" {
+		errBody["traceId"] = id
+	}
+	c.JSON(status, H{"error": errBody})
 }
 
 // BadRequest 返回 400 错误
@@ -391,6 +514,9 @@ func (c *Context) ValidationError(err error) {
 			errData["suggestions"] = se.Suggestions
 		}
 	}
+	if id := c.TraceID(); id != "" {
+		errData["traceId"] = id
+	}
 	c.JSON(http.StatusUnprocessableEntity, H{"error": errData})
 }
 
@@ -417,7 +543,8 @@ func (c *Context) InternalErrorWrap(err error, message string, metadata map[stri
 		}
 	}
 
-	c.JSON(http.StatusInternalServerError, errors.NewErrorResponse(se))
+	resp := errors.NewErrorResponse(se).WithTraceID(c.TraceID())
+	c.JSON(http.StatusInternalServerError, resp)
 }
 
 // BadRequestWrap 返回 400 错误，带调用链，自动记录日志
@@ -436,7 +563,7 @@ func (c *Context) BadRequestWrap(err error, message string) {
 		l.Printf("[WARN] %s: %v", message, err)
 	}
 
-	c.JSON(http.StatusBadRequest, errors.NewErrorResponse(se))
+	c.JSON(http.StatusBadRequest, errors.NewErrorResponse(se).WithTraceID(c.TraceID()))
 }
 
 // NotFoundWrap 返回 404 错误，带调用链，自动记录日志
@@ -455,7 +582,7 @@ func (c *Context) NotFoundWrap(err error, message string) {
 		l.Printf("[WARN] %s: %v", message, err)
 	}
 
-	c.JSON(http.StatusNotFound, errors.NewErrorResponse(se))
+	c.JSON(http.StatusNotFound, errors.NewErrorResponse(se).WithTraceID(c.TraceID()))
 }
 
 // ValidationErrorWrap 返回验证错误，带调用链，自动记录日志
@@ -474,7 +601,7 @@ func (c *Context) ValidationErrorWrap(err error, field, message string) {
 		l.Printf("[WARN] validation failed: %s - %v", message, err)
 	}
 
-	c.JSON(http.StatusUnprocessableEntity, errors.NewErrorResponse(se))
+	c.JSON(http.StatusUnprocessableEntity, errors.NewErrorResponse(se).WithTraceID(c.TraceID()))
 }
 
 // GetErrorChain 获取错误链

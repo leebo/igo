@@ -57,6 +57,14 @@ func runDoctor(root string) int {
 		diags = append(diags, checkJSONErrorResponse(fset, f)...)
 	}
 
+	// 项目级检查：跨文件分析 routes / schemas 一致性。
+	// 加载失败不阻断，文件级警告仍输出。
+	if project, err := loadStaticProject(root); err == nil {
+		diags = append(diags, checkResponseTypeNotRegistered(project)...)
+		diags = append(diags, checkInvalidValidateTag(project)...)
+		diags = append(diags, checkSchemaUnusedInRoutes(project)...)
+	}
+
 	report(diags, len(files))
 
 	for _, d := range diags {

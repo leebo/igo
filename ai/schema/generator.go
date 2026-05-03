@@ -51,7 +51,87 @@ func (g *Generator) Generate() *OpenAPISpec {
 	for _, route := range g.routes {
 		g.addRouteConfig(route)
 	}
+	g.addSecuritySchemesIfUsed()
 	return g.spec
+}
+
+// addSecuritySchemesIfUsed 当任何路由的中间件名暗示需要鉴权时，自动注册一个
+// "bearerAuth" 安全方案。AI 生成 OpenAPI 客户端会知道补 Authorization 头。
+//
+// 启发式：中间件名（不区分大小写）含有 "auth"、"jwt"、"bearer"、"token"、"requireauth"。
+func (g *Generator) addSecuritySchemesIfUsed() {
+	used := false
+	for _, route := range g.routes {
+		if routeNeedsAuth(route) {
+			used = true
+			break
+		}
+	}
+	if !used {
+		return
+	}
+	if g.spec.Components == nil {
+		g.spec.Components = &Components{Schemas: make(map[string]*Schema)}
+	}
+	if g.spec.Components.SecuritySchemes == nil {
+		g.spec.Components.SecuritySchemes = make(map[string]*SecurityScheme)
+	}
+	g.spec.Components.SecuritySchemes["bearerAuth"] = &SecurityScheme{
+		Type:         "http",
+		Scheme:       "bearer",
+		BearerFormat: "JWT",
+		Description:  "JWT bearer token in Authorization header",
+	}
+	// 给"看起来需要鉴权"的 Operation 挂上 security 引用
+	for _, route := range g.routes {
+		if !routeNeedsAuth(route) {
+			continue
+		}
+		op := g.lookupOperation(route)
+		if op == nil {
+			continue
+		}
+		op.Security = []map[string][]string{{"bearerAuth": {}}}
+	}
+}
+
+func routeNeedsAuth(route *routepkg.RouteConfig) bool {
+	if route == nil {
+		return false
+	}
+	for _, mw := range route.Middlewares {
+		l := strings.ToLower(mw)
+		if strings.Contains(l, "auth") || strings.Contains(l, "jwt") ||
+			strings.Contains(l, "bearer") || strings.Contains(l, "token") ||
+			strings.Contains(l, "requireauth") {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Generator) lookupOperation(route *routepkg.RouteConfig) *Operation {
+	pathItem := g.spec.Paths[openAPIPath(route.Path)]
+	if pathItem == nil {
+		return nil
+	}
+	switch route.Method {
+	case "GET":
+		return pathItem.GET
+	case "POST":
+		return pathItem.POST
+	case "PUT":
+		return pathItem.PUT
+	case "DELETE":
+		return pathItem.DELETE
+	case "PATCH":
+		return pathItem.PATCH
+	case "OPTIONS":
+		return pathItem.OPTIONS
+	case "HEAD":
+		return pathItem.HEAD
+	}
+	return nil
 }
 
 func (g *Generator) addComponentSchema(typeSchema *types.TypeSchema) {

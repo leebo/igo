@@ -98,6 +98,52 @@ func TestGenerateOpenAPIFromRoutesAndSchemas(t *testing.T) {
 	assert.Contains(t, string(payload), `"/users/{id}"`)
 }
 
+func TestGenerator_SecuritySchemesAddedWhenAuthMiddlewareUsed(t *testing.T) {
+	routes := []*routepkg.RouteConfig{
+		{
+			Method:      "GET",
+			Path:        "/me",
+			HandlerName: "me",
+			Middlewares: []string{"middleware.JWTAuth"},
+			Responses:   []routepkg.ResponseDefinition{{StatusCode: 200}},
+		},
+		{
+			Method:      "GET",
+			Path:        "/health",
+			HandlerName: "health",
+			Responses:   []routepkg.ResponseDefinition{{StatusCode: 200}},
+		},
+	}
+	spec := NewRouteGenerator(routes).Generate()
+
+	require.NotNil(t, spec.Components)
+	require.NotNil(t, spec.Components.SecuritySchemes)
+	scheme := spec.Components.SecuritySchemes["bearerAuth"]
+	require.NotNil(t, scheme)
+	assert.Equal(t, "http", scheme.Type)
+	assert.Equal(t, "bearer", scheme.Scheme)
+	assert.Equal(t, "JWT", scheme.BearerFormat)
+
+	// /me 应该带 security，/health 不应带
+	me := spec.Paths["/me"].GET
+	require.NotNil(t, me.Security)
+	assert.Equal(t, []map[string][]string{{"bearerAuth": {}}}, me.Security)
+
+	health := spec.Paths["/health"].GET
+	assert.Empty(t, health.Security)
+}
+
+func TestGenerator_NoSecuritySchemesWhenNoAuth(t *testing.T) {
+	routes := []*routepkg.RouteConfig{
+		{Method: "GET", Path: "/health", HandlerName: "health", Responses: []routepkg.ResponseDefinition{{StatusCode: 200}}},
+	}
+	spec := NewRouteGenerator(routes).Generate()
+
+	if spec.Components != nil {
+		assert.Empty(t, spec.Components.SecuritySchemes)
+	}
+}
+
 func TestSchemaForTypeNameFallbacksAndBounds(t *testing.T) {
 	generator := NewRouteGenerator(nil, &types.TypeSchema{Name: "Known"})
 

@@ -30,6 +30,9 @@ type App struct {
 	groupMiddlewares []MiddlewareFunc // 从父 Group 继承的中间件
 	routeRegistry    *routepkg.Registry
 	typeRegistry     *types.TypeRegistry
+	requestRecorder  *RequestRecorder
+	logRecorder      *LogRecorder
+	recorderOnce     sync.Once
 	aiUnsafe         bool      // prd 下显式 opt-in 暴露 /_ai/* 时为 true
 	prdNoOpAILog     sync.Once // FIX #37: log "no-op in prd" at most once per app
 }
@@ -218,7 +221,70 @@ func (a *App) RegisterAIRoutesUnsafe() {
 	a.registerAIRoutes()
 }
 
+// EnableRecording 安装请求 / 日志 recorder（默认 100 条请求 + 200 条日志，
+// 单请求体最多 2KB）。registerAIRoutes 在 dev/test 会自动调用。
+// 多次调用幂等。
+func (a *App) EnableRecording() {
+	a.recorderOnce.Do(func() {
+		if a.requestRecorder == nil {
+			a.requestRecorder = NewRequestRecorder(100, 2048)
+		}
+		if a.logRecorder == nil {
+			// 包装当前全局 logger（如果有），保持原行为
+			a.logRecorder = NewLogRecorder(200, getLogger())
+			SetLogger(a.logRecorder)
+		}
+		a.Use(recorderMiddleware(a.requestRecorder))
+	})
+}
+
+// RequestRecorder 返回当前 App 的请求快照 recorder（可能为 nil，未启用录制时）。
+func (a *App) RequestRecorder() *RequestRecorder { return a.requestRecorder }
+
+// LogRecorder 返回当前 App 的日志 recorder（可能为 nil，未启用录制时）。
+func (a *App) LogRecorder() *LogRecorder { return a.logRecorder }
+
 func (a *App) registerAIRoutes() {
+	// /_ai/last-requests 与 /_ai/logs 依赖 recorder，因此在端点注册前确保 recorder 就绪。
+	a.EnableRecording()
+
+	a.Get("/_ai/last-requests", func(c *Context) {
+		limit := c.QueryInt("limit", 50)
+		records := a.requestRecorder.Snapshot()
+		if limit > 0 && len(records) > limit {
+			records = records[len(records)-limit:]
+		}
+		c.JSON(http.StatusOK, H{
+			"capacity":     a.requestRecorder.capacity,
+			"maxBodyBytes": a.requestRecorder.maxBodyBytes,
+			"count":        len(records),
+			"records":      records,
+		})
+	})
+
+	a.Get("/_ai/logs", func(c *Context) {
+		limit := c.QueryInt("limit", 100)
+		level := strings.ToLower(c.Query("level"))
+		records := a.logRecorder.Snapshot()
+		if level != "" {
+			filtered := records[:0]
+			for _, r := range records {
+				if r.Level == level {
+					filtered = append(filtered, r)
+				}
+			}
+			records = filtered
+		}
+		if limit > 0 && len(records) > limit {
+			records = records[len(records)-limit:]
+		}
+		c.JSON(http.StatusOK, H{
+			"capacity": a.logRecorder.capacity,
+			"count":    len(records),
+			"records":  records,
+		})
+	})
+
 	a.Get("/_ai/routes", func(c *Context) {
 		c.JSON(http.StatusOK, a.Routes())
 	})
@@ -258,8 +324,11 @@ func (a *App) registerAIRoutes() {
 
 // RegisterSchema 把类型显式注册到当前 App 的 schema 注册表。
 // 用于不会经过 BindAndValidate 的类型（如纯响应类型）也能出现在 /_ai/schemas。
+//
+// 默认 usage 为 "response"。如果同一类型也以请求/查询/路径形式出现，
+// 那条路径上的绑定调用会自动追加额外 usage（去重合并）。
 func (a *App) RegisterSchema(sample any) {
-	registerSchemaOnce(a.typeRegistry, sample)
+	registerSchemaOnce(a.typeRegistry, sample, types.UsageResponse)
 }
 
 // RegisterAppSchema 把类型 T 显式注册到指定 App 的 schema 注册表。
@@ -319,6 +388,8 @@ func AIConventions() H {
 			"/_ai/openapi",
 			"/_ai/conventions",
 			"/_ai/middlewares",
+			"/_ai/last-requests",
+			"/_ai/logs",
 		},
 	}
 }

@@ -176,6 +176,11 @@ func Auth() core.MiddlewareFunc {
 }
 
 // RequestID 请求 ID 中间件
+//
+// - 读取入站 X-Request-ID 头；不存在时生成纳秒级 ID
+// - 写出 X-Request-ID 响应头
+// - 把 ID 存入 c.Set(core.CtxKeyRequestID, id)，错误响应渲染会自动注入到响应体的
+//   error.traceId 字段，便于 AI agent 把响应错误关联到日志
 func RequestID() core.MiddlewareFunc {
 	return func(c *core.Context) {
 		requestID := c.Request.Header.Get("X-Request-ID")
@@ -183,6 +188,7 @@ func RequestID() core.MiddlewareFunc {
 			requestID = generateID()
 		}
 		c.Header("X-Request-ID", requestID)
+		c.Set(core.CtxKeyRequestID, requestID)
 		c.Next()
 	}
 }

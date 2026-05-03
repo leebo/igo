@@ -39,14 +39,15 @@ type PathItem struct {
 }
 
 type Operation struct {
-	Tags        []string             `json:"tags,omitempty"`
-	Summary     string               `json:"summary,omitempty"`
-	Description string               `json:"description,omitempty"`
-	OperationID string               `json:"operationId,omitempty"`
-	Parameters  []*Parameter         `json:"parameters,omitempty"`
-	RequestBody *RequestBody         `json:"requestBody,omitempty"`
-	Responses   map[string]*Response `json:"responses"`
-	Deprecated  bool                 `json:"deprecated,omitempty"`
+	Tags        []string                 `json:"tags,omitempty"`
+	Summary     string                   `json:"summary,omitempty"`
+	Description string                   `json:"description,omitempty"`
+	OperationID string                   `json:"operationId,omitempty"`
+	Parameters  []*Parameter             `json:"parameters,omitempty"`
+	RequestBody *RequestBody             `json:"requestBody,omitempty"`
+	Responses   map[string]*Response     `json:"responses"`
+	Security    []map[string][]string    `json:"security,omitempty"`
+	Deprecated  bool                     `json:"deprecated,omitempty"`
 }
 
 type Parameter struct {
@@ -91,5 +92,20 @@ type Schema struct {
 
 // Components 组件定义
 type Components struct {
-	Schemas map[string]*Schema `json:"schemas,omitempty"`
+	Schemas         map[string]*Schema         `json:"schemas,omitempty"`
+	SecuritySchemes map[string]*SecurityScheme `json:"securitySchemes,omitempty"`
+}
+
+// SecurityScheme OpenAPI 3.0 安全方案。
+//
+// igo 默认输出一个名为 "bearerAuth" 的 HTTP/Bearer/JWT 方案，凡是路由的
+// 中间件链里出现 Auth/JWT/Bearer 字样就会自动挂上 security: [{bearerAuth: []}]
+// 让 AI 生成的客户端知道带 Authorization 头。
+type SecurityScheme struct {
+	Type         string `json:"type"`                   // apiKey | http | oauth2 | openIdConnect
+	Scheme       string `json:"scheme,omitempty"`       // bearer | basic
+	BearerFormat string `json:"bearerFormat,omitempty"` // JWT
+	In           string `json:"in,omitempty"`           // apiKey 时使用
+	Name         string `json:"name,omitempty"`         // apiKey 名
+	Description  string `json:"description,omitempty"`
 }

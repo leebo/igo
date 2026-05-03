@@ -102,6 +102,8 @@ func runAI(args []string) int {
 	case "openapi":
 		gen := schema.NewRouteGenerator(project.routes, project.schemas...)
 		return writeJSON(os.Stdout, gen.Generate())
+	case "validate":
+		return runAIValidate(root, os.Stdout)
 	case "prompt":
 		if len(args) < 3 {
 			fmt.Fprintln(os.Stderr, "usage: igo ai prompt [path] METHOD PATH")
@@ -133,6 +135,7 @@ Usage:
   igo ai schemas [path]
   igo ai errors
   igo ai openapi [path]
+  igo ai validate [path]
   igo ai prompt [path] METHOD PATH
   igo ai workflow
   igo ai examples
@@ -159,8 +162,12 @@ func loadStaticProject(root string) (*staticProject, error) {
 		}
 		p.files = append(p.files, f)
 	}
+	// 必须三阶段：先把所有 types 收齐，再扫 handlers（markSchemaUsage 依赖 schemaByName），
+	// 最后扫 routes（handlerFactsFromFuncLit 又会调用 markSchemaUsage）。
 	for _, f := range p.files {
 		p.collectTypes(f)
+	}
+	for _, f := range p.files {
 		p.collectHandlers(f)
 	}
 	for _, f := range p.files {
@@ -248,28 +255,90 @@ func (p *staticProject) collectStructFields(st *ast.StructType) []types.FieldSch
 func (p *staticProject) collectHandlers(f *ast.File) {
 	for _, decl := range f.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil || !looksLikeContextHandler(fn.Type) {
+		if !ok || fn.Body == nil {
 			continue
 		}
-		pos := p.fset.Position(fn.Pos())
-		facts := &handlerFacts{
-			Name:       fn.Name.Name,
-			FilePath:   pos.Filename,
-			LineNumber: pos.Line,
-		}
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
+
+		// 直接 handler：func(c *Context) { ... }
+		if looksLikeContextHandler(fn.Type) {
+			facts := p.factsFromBody(fn.Name.Name, fn.Pos(), fn.Body)
+			p.handlers[fn.Name.Name] = facts
+			if fn.Recv != nil && len(fn.Recv.List) > 0 {
+				p.handlers[receiverKey(fn.Recv.List[0].Type, fn.Name.Name)] = facts
 			}
-			p.collectHandlerCallFacts(facts, call)
-			return true
-		})
-		p.handlers[fn.Name.Name] = facts
-		if fn.Recv != nil && len(fn.Recv.List) > 0 {
-			p.handlers[receiverKey(fn.Recv.List[0].Type, fn.Name.Name)] = facts
+			continue
+		}
+
+		// Handler 工厂：func(...) core.HandlerFunc { return func(c *Context){...} }
+		if returnsHandlerFunc(fn.Type) {
+			if inner := findReturnedHandlerFuncLit(fn.Body); inner != nil {
+				facts := p.factsFromBody(fn.Name.Name, inner.Pos(), inner.Body)
+				p.handlers[fn.Name.Name] = facts
+			}
 		}
 	}
+}
+
+func (p *staticProject) factsFromBody(name string, pos token.Pos, body *ast.BlockStmt) *handlerFacts {
+	posInfo := p.fset.Position(pos)
+	facts := &handlerFacts{
+		Name:       name,
+		FilePath:   posInfo.Filename,
+		LineNumber: posInfo.Line,
+	}
+	if body == nil {
+		return facts
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		p.collectHandlerCallFacts(facts, call)
+		return true
+	})
+	return facts
+}
+
+// returnsHandlerFunc 判断函数返回类型是否为 *Context handler（HandlerFunc / core.HandlerFunc / igo.HandlerFunc）。
+func returnsHandlerFunc(ft *ast.FuncType) bool {
+	if ft.Results == nil || len(ft.Results.List) != 1 {
+		return false
+	}
+	switch t := ft.Results.List[0].Type.(type) {
+	case *ast.Ident:
+		return t.Name == "HandlerFunc"
+	case *ast.SelectorExpr:
+		return t.Sel.Name == "HandlerFunc"
+	}
+	return false
+}
+
+// findReturnedHandlerFuncLit 在函数体里找形如 `return func(c *Context) {...}` 的内层 FuncLit。
+func findReturnedHandlerFuncLit(body *ast.BlockStmt) *ast.FuncLit {
+	if body == nil {
+		return nil
+	}
+	var found *ast.FuncLit
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found != nil {
+			return false
+		}
+		ret, ok := n.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) == 0 {
+			return true
+		}
+		lit, ok := ret.Results[0].(*ast.FuncLit)
+		if !ok {
+			return true
+		}
+		if looksLikeContextHandler(lit.Type) {
+			found = lit
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 func (p *staticProject) collectHandlerCallFacts(facts *handlerFacts, call *ast.CallExpr) {
@@ -282,12 +351,15 @@ func (p *staticProject) collectHandlerCallFacts(facts *handlerFacts, call *ast.C
 				Required:    true,
 			}
 			facts.AIHints = appendUnique(facts.AIHints, "uses BindAndValidate; return immediately when ok is false")
+			p.markSchemaUsage(typ, types.UsageRequest)
 		case "query":
 			facts.Params = mergeParams(facts.Params, p.paramsFromSchema(typ, "query"))
 			facts.AIHints = appendUnique(facts.AIHints, "uses BindQueryAndValidate; return immediately when ok is false")
+			p.markSchemaUsage(typ, types.UsageQuery)
 		case "path":
 			facts.Params = mergeParams(facts.Params, p.paramsFromSchema(typ, "path"))
 			facts.AIHints = appendUnique(facts.AIHints, "uses BindPathAndValidate; return immediately when ok is false")
+			p.markSchemaUsage(typ, types.UsagePath)
 		}
 	}
 
@@ -321,14 +393,22 @@ func (p *staticProject) collectHandlerCallFacts(facts *handlerFacts, call *ast.C
 			}
 		}
 	case name == "Success":
-		facts.Responses = mergeResponse(facts.Responses, 200, "success", responseType(call))
+		typ := responseType(call)
+		facts.Responses = mergeResponse(facts.Responses, 200, "success", typ)
+		p.markSchemaUsage(typ, types.UsageResponse)
 	case name == "Created":
-		facts.Responses = mergeResponse(facts.Responses, 201, "created", responseType(call))
+		typ := responseType(call)
+		facts.Responses = mergeResponse(facts.Responses, 201, "created", typ)
+		p.markSchemaUsage(typ, types.UsageResponse)
 	case name == "NoContent":
 		facts.Responses = mergeResponse(facts.Responses, 204, "no content", "")
 	case name == "JSON":
 		if len(call.Args) > 0 {
-			facts.Responses = mergeResponse(facts.Responses, statusCode(call.Args[0]), "response", responseType(call))
+			typ := responseType(call)
+			facts.Responses = mergeResponse(facts.Responses, statusCode(call.Args[0]), "response", typ)
+			if status := statusCode(call.Args[0]); status >= 200 && status < 300 {
+				p.markSchemaUsage(typ, types.UsageResponse)
+			}
 		}
 	case name == "Redirect":
 		if len(call.Args) > 0 {
@@ -470,6 +550,18 @@ func (p *staticProject) handlerFactsFor(expr ast.Expr, fallback string) *handler
 		return p.handlers[h.Sel.Name]
 	case *ast.FuncLit:
 		return p.handlerFactsFromFuncLit(h)
+	case *ast.CallExpr:
+		// Handler 工厂模式：app.Post("/x", makeHandler(deps...))
+		// 通过被调函数名查 collectHandlers 里捕获的 facts。
+		switch fun := h.Fun.(type) {
+		case *ast.Ident:
+			return p.handlers[fun.Name]
+		case *ast.SelectorExpr:
+			if facts := p.handlers[selectorKey(fun)]; facts != nil {
+				return facts
+			}
+			return p.handlers[fun.Sel.Name]
+		}
 	}
 	return p.handlers[fallback]
 }
@@ -501,6 +593,37 @@ func (p *staticProject) handlerFactsFromFuncLit(fn *ast.FuncLit) *handlerFacts {
 		return true
 	})
 	return facts
+}
+
+// markSchemaUsage 给静态收集到的 schema 标注 Usage。typeName 可能带 "*" 前缀
+// 或以 "&" / 字面量形式出现，需先剥离到结构体名再查表。无名类型直接忽略。
+func (p *staticProject) markSchemaUsage(typeName, usage string) {
+	if typeName == "" || usage == "" {
+		return
+	}
+	name := strings.TrimSpace(typeName)
+	name = strings.TrimPrefix(name, "*")
+	name = strings.TrimPrefix(name, "&")
+	if idx := strings.LastIndex(name, "."); idx != -1 {
+		name = name[idx+1:]
+	}
+	if idx := strings.IndexByte(name, '['); idx != -1 {
+		name = name[:idx]
+	}
+	if idx := strings.IndexByte(name, '{'); idx != -1 {
+		name = name[:idx]
+	}
+	schema := p.schemaByName[name]
+	if schema == nil {
+		return
+	}
+	for _, existing := range schema.Usage {
+		if existing == usage {
+			return
+		}
+	}
+	schema.Usage = append(schema.Usage, usage)
+	sort.Strings(schema.Usage)
 }
 
 func (p *staticProject) paramsFromSchema(typeName, in string) []routepkg.ParamDefinition {
@@ -835,7 +958,9 @@ func exprTypeName(expr ast.Expr) string {
 	case *ast.CompositeLit:
 		return exprString(e.Type)
 	case *ast.CallExpr:
-		return exprString(e.Fun)
+		// 方法/函数调用结果类型只能靠类型检查器解析，静态分析无法可靠得知。
+		// 返回空字符串让 doctor 的 response-type-not-registered 检查跳过，避免误报。
+		return ""
 	case *ast.SelectorExpr:
 		return selectorKey(e)
 	default:

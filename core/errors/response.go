@@ -18,6 +18,7 @@ type ErrorDetail struct {
 	Metadata    map[string]any `json:"metadata,omitempty"`
 	CallChain   []CallFrame    `json:"callChain,omitempty"` // 调用链
 	RootCause   *ErrorDetail   `json:"rootCause,omitempty"` // 根本原因
+	TraceID     string         `json:"traceId,omitempty"`   // 由 RequestID 中间件写入，便于关联日志
 }
 
 // NewErrorResponse 从 StructuredError 创建错误响应
@@ -120,6 +121,16 @@ func SimpleErrorResponse(code, message string) ErrorResponse {
 // WithSuggestions 添加建议到错误响应
 func (r *ErrorResponse) WithSuggestions(suggestions ...string) *ErrorResponse {
 	r.Error.Suggestions = suggestions
+	return r
+}
+
+// WithTraceID 返回填入 trace ID 的副本（通常由 RequestID 中间件生成）。
+// 空字符串会被忽略并返回原 response。
+func (r ErrorResponse) WithTraceID(traceID string) ErrorResponse {
+	if traceID == "" {
+		return r
+	}
+	r.Error.TraceID = traceID
 	return r
 }
 

@@ -10,13 +10,26 @@ import (
 )
 
 // TypeSchema 类型完整描述，供 CLI、/_ai/schemas 和 OpenAPI 组件共用。
+//
+// Usage 标注此类型在路由元数据中出现的位置，可同时包含多个值。AI 客户端可据此判断
+// 一个类型是请求体（"request"）、响应体（"response"）、查询参数容器（"query"）
+// 还是路径参数容器（"path"）。空切片表示未被任何路由直接引用。
 type TypeSchema struct {
 	Name        string        `json:"name"`
 	Package     string        `json:"package,omitempty"`
 	FilePath    string        `json:"filePath,omitempty"`
 	Fields      []FieldSchema `json:"fields"`
 	Description string        `json:"description,omitempty"`
+	Usage       []string      `json:"usage,omitempty"`
 }
+
+// Schema usage 常量，配合 TypeSchema.Usage 与 TypeRegistry.RegisterTypeUsage 使用。
+const (
+	UsageRequest  = "request"
+	UsageResponse = "response"
+	UsageQuery    = "query"
+	UsagePath     = "path"
+)
 
 // FieldSchema 字段描述。
 type FieldSchema struct {
@@ -57,6 +70,9 @@ func NewTypeRegistry() *TypeRegistry {
 }
 
 // RegisterType 注册类型。
+//
+// 重复注册同名类型时，新 schema 替换旧 schema，但 Usage 会合并去重，避免在
+// 不同绑定路径上注册同一类型时丢失先前已记录的用途。
 func (r *TypeRegistry) RegisterType(schema *TypeSchema) {
 	if r == nil || schema == nil || schema.Name == "" {
 		return
@@ -66,7 +82,26 @@ func (r *TypeRegistry) RegisterType(schema *TypeSchema) {
 	defer r.mu.Unlock()
 
 	copySchema := cloneTypeSchema(schema)
+	if existing := r.types[schema.Name]; existing != nil {
+		copySchema.Usage = mergeUsages(existing.Usage, copySchema.Usage)
+	}
 	r.types[schema.Name] = &copySchema
+}
+
+// RegisterTypeUsage 给已注册类型追加一个或多个 usage 标签，幂等。
+// 如果类型尚未注册，本调用会被忽略 —— Usage 必须挂在已知 schema 上。
+func (r *TypeRegistry) RegisterTypeUsage(name string, usages ...string) {
+	if r == nil || name == "" || len(usages) == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	existing, ok := r.types[name]
+	if !ok || existing == nil {
+		return
+	}
+	existing.Usage = mergeUsages(existing.Usage, usages)
 }
 
 // GetType 获取类型。
@@ -286,7 +321,31 @@ func cloneTypeSchema(schema *TypeSchema) TypeSchema {
 			copySchema.Fields[i].Rules[j].Params = append([]string(nil), schema.Fields[i].Rules[j].Params...)
 		}
 	}
+	copySchema.Usage = append([]string(nil), schema.Usage...)
 	return copySchema
+}
+
+// mergeUsages 合并两组 usage 标签并保持稳定排序与去重。
+func mergeUsages(existing, incoming []string) []string {
+	if len(existing) == 0 && len(incoming) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(existing)+len(incoming))
+	merged := make([]string, 0, len(existing)+len(incoming))
+	for _, group := range [][]string{existing, incoming} {
+		for _, u := range group {
+			if u == "" {
+				continue
+			}
+			if _, ok := seen[u]; ok {
+				continue
+			}
+			seen[u] = struct{}{}
+			merged = append(merged, u)
+		}
+	}
+	sort.Strings(merged)
+	return merged
 }
 
 func packageName(pkgPath string) string {

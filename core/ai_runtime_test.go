@@ -80,7 +80,9 @@ func TestRegisterAIRoutesExposeMetadata(t *testing.T) {
 		} `json:"routes"`
 	}
 	getJSON(t, app, "/_ai/middlewares", &middlewarePayload)
-	require.Len(t, middlewarePayload.Global, 1)
+	// RegisterAIRoutes 会自动 EnableRecording，追加 recorderMiddleware；
+	// 用户自行注册的 aiRouteGlobalMiddleware 仍然是第一个。
+	require.GreaterOrEqual(t, len(middlewarePayload.Global), 1)
 	assert.True(t, strings.HasSuffix(middlewarePayload.Global[0].Name, "aiRouteGlobalMiddleware"))
 
 	var schemas []types.TypeSchema
